@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tshark:*)",
+      "Bash(python analyze_pcap.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python extract_commands.py:*)",
+      "Bash(dotnet:*)",
+      "Bash(ping:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(timeout 15 dotnet run:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(timeout 15 python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,57 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+*.egg
+venv/
+.venv/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Recordings and snapshots (output files)
+*.mp4
+*.avi
+*.jpg
+*.jpeg
+*.png
+!login_logo*.png
+
+# Archives
+*.zip
+
+# Captured traffic
+*.pcap
+*.pcapng
