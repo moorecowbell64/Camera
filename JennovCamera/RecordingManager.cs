@@ -109,15 +109,13 @@ public class RecordingManager : IDisposable
 
         try
         {
-            // Build RTSP URL with FFMPEG options for 4K streaming
-            // Use TCP transport for reliability with high-bandwidth 4K streams
-            var rtspUrlWithOptions = _rtspUrl;
-
-            // Set FFMPEG options via environment for better RTSP handling
+            // Set FFMPEG options via environment for 4K RTSP streaming
+            // Use TCP transport for reliability, large buffer for 4K bandwidth
+            // Disable probing limits to get full resolution
             Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                "rtsp_transport;tcp|buffer_size;4194304|max_delay;500000");
+                "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
 
-            _videoCapture = new VideoCapture(rtspUrlWithOptions, VideoCaptureAPIs.FFMPEG);
+            _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
 
             if (!_videoCapture.IsOpened())
             {
@@ -341,7 +339,7 @@ public class RecordingManager : IDisposable
 
                     // Reconnect with same FFMPEG options
                     Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                        "rtsp_transport;tcp|buffer_size;4194304|max_delay;500000");
+                        "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
 
                     _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
                     _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
