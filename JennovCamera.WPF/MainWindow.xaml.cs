@@ -137,6 +137,9 @@ public partial class MainWindow : System.Windows.Window
             UpdateConnectionStatus("Disconnected", Brushes.Red);
             UpdateRecordingStatus("Not Recording", Brushes.Gray);
             StreamQualityStatus.Text = "Stream: --";
+            FrameResolutionStatus.Text = "Resolution: --";
+            _lastFrameWidth = 0;
+            _lastFrameHeight = 0;
             ConnectButton.Content = "Connect Camera";
 
             // Disable controls
@@ -158,10 +161,16 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private int _lastFrameWidth = 0;
+    private int _lastFrameHeight = 0;
+
     private void OnFrameCaptured(object? sender, Mat frame)
     {
         try
         {
+            var width = frame.Width;
+            var height = frame.Height;
+
             // Convert Mat to BitmapSource on UI thread
             Dispatcher.Invoke(() =>
             {
@@ -170,6 +179,14 @@ public partial class MainWindow : System.Windows.Window
                     var bitmap = BitmapSourceConverter.ToBitmapSource(frame);
                     bitmap.Freeze(); // Allow cross-thread access
                     VideoImage.Source = bitmap;
+
+                    // Update resolution display if changed
+                    if (width != _lastFrameWidth || height != _lastFrameHeight)
+                    {
+                        _lastFrameWidth = width;
+                        _lastFrameHeight = height;
+                        FrameResolutionStatus.Text = $"Resolution: {width}x{height}";
+                    }
                 }
                 catch
                 {

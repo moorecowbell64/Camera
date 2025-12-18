@@ -56,6 +56,14 @@
                            FontSize="14"
                            VerticalAlignment="Center"/>
 
+                <TextBlock x:Name="FrameResolutionStatus"
+                           Grid.Column="1"
+                           Text="Resolution: --"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           FontSize="14"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"/>
+
                 <TextBlock x:Name="StreamQualityStatus"
                            Grid.Column="2"
                            Text="Stream: --"

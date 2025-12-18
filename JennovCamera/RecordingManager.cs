@@ -117,8 +117,20 @@ public class RecordingManager : IDisposable
                 return false;
             }
 
-            // Configure for low latency
+            // Configure capture settings
             _videoCapture.Set(VideoCaptureProperties.BufferSize, 3);
+
+            // For 4K stream, explicitly request full resolution (camera may auto-negotiate)
+            if (_currentQuality == StreamQuality.Main)
+            {
+                _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
+                _videoCapture.Set(VideoCaptureProperties.FrameHeight, 2160);
+            }
+
+            // Log actual capture resolution
+            var actualWidth = _videoCapture.Get(VideoCaptureProperties.FrameWidth);
+            var actualHeight = _videoCapture.Get(VideoCaptureProperties.FrameHeight);
+            Console.WriteLine($"Capture initialized: requested={(_currentQuality == StreamQuality.Main ? "3840x2160" : "720x480")}, actual={actualWidth}x{actualHeight}");
 
             _isStreaming = true;
             _cancellationTokenSource = new CancellationTokenSource();
