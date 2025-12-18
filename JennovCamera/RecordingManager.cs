@@ -109,7 +109,15 @@ public class RecordingManager : IDisposable
 
         try
         {
-            _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
+            // Build RTSP URL with FFMPEG options for 4K streaming
+            // Use TCP transport for reliability with high-bandwidth 4K streams
+            var rtspUrlWithOptions = _rtspUrl;
+
+            // Set FFMPEG options via environment for better RTSP handling
+            Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|buffer_size;4194304|max_delay;500000");
+
+            _videoCapture = new VideoCapture(rtspUrlWithOptions, VideoCaptureAPIs.FFMPEG);
 
             if (!_videoCapture.IsOpened())
             {
@@ -117,20 +125,22 @@ public class RecordingManager : IDisposable
                 return false;
             }
 
-            // Configure capture settings
-            _videoCapture.Set(VideoCaptureProperties.BufferSize, 3);
+            // Configure capture settings for 4K
+            _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
 
-            // For 4K stream, explicitly request full resolution (camera may auto-negotiate)
+            // For 4K stream, set resolution hints
             if (_currentQuality == StreamQuality.Main)
             {
                 _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
                 _videoCapture.Set(VideoCaptureProperties.FrameHeight, 2160);
+                _videoCapture.Set(VideoCaptureProperties.Fps, 20);
             }
 
             // Log actual capture resolution
             var actualWidth = _videoCapture.Get(VideoCaptureProperties.FrameWidth);
             var actualHeight = _videoCapture.Get(VideoCaptureProperties.FrameHeight);
-            Console.WriteLine($"Capture initialized: requested={(_currentQuality == StreamQuality.Main ? "3840x2160" : "720x480")}, actual={actualWidth}x{actualHeight}");
+            var actualFps = _videoCapture.Get(VideoCaptureProperties.Fps);
+            Console.WriteLine($"Capture initialized: requested={(_currentQuality == StreamQuality.Main ? "3840x2160" : "720x480")}, actual={actualWidth}x{actualHeight} @ {actualFps}fps");
 
             _isStreaming = true;
             _cancellationTokenSource = new CancellationTokenSource();
@@ -329,8 +339,18 @@ public class RecordingManager : IDisposable
                     _videoCapture?.Release();
                     Thread.Sleep(1000);
 
+                    // Reconnect with same FFMPEG options
+                    Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                        "rtsp_transport;tcp|buffer_size;4194304|max_delay;500000");
+
                     _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
-                    _videoCapture.Set(VideoCaptureProperties.BufferSize, 3);
+                    _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
+
+                    if (_currentQuality == StreamQuality.Main)
+                    {
+                        _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
+                        _videoCapture.Set(VideoCaptureProperties.FrameHeight, 2160);
+                    }
 
                     consecutiveFailures = 0;
                 }
