@@ -249,6 +249,171 @@ public class OnvifClient : IDisposable
         return response != null;
     }
 
+    /// <summary>
+    /// Save current position as a preset
+    /// </summary>
+    public async Task<string?> SetPresetAsync(string presetName, string? presetToken = null)
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            await GetMediaProfileAsync();
+
+        var securityHeader = GenerateSecurityHeader();
+        var tokenElement = string.IsNullOrEmpty(presetToken) ? "" : $"<tptz:PresetToken>{presetToken}</tptz:PresetToken>";
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <tptz:SetPreset>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:PresetName>{presetName}</tptz:PresetName>
+            {tokenElement}
+        </tptz:SetPreset>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
+        if (response != null)
+        {
+            var ns = XNamespace.Get("http://www.onvif.org/ver20/ptz/wsdl");
+            return response.Descendants(ns + "PresetToken").FirstOrDefault()?.Value;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Remove a preset
+    /// </summary>
+    public async Task<bool> RemovePresetAsync(string presetToken)
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            await GetMediaProfileAsync();
+
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <tptz:RemovePreset>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:PresetToken>{presetToken}</tptz:PresetToken>
+        </tptz:RemovePreset>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
+        return response != null;
+    }
+
+    /// <summary>
+    /// Get all presets
+    /// </summary>
+    public async Task<List<PtzPreset>> GetPresetsAsync()
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            await GetMediaProfileAsync();
+
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <tptz:GetPresets>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+        </tptz:GetPresets>
+    </s:Body>
+</s:Envelope>";
+
+        var presets = new List<PtzPreset>();
+        var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
+
+        if (response != null)
+        {
+            var ns = XNamespace.Get("http://www.onvif.org/ver20/ptz/wsdl");
+            var tt = XNamespace.Get("http://www.onvif.org/ver10/schema");
+
+            foreach (var preset in response.Descendants(ns + "Preset"))
+            {
+                presets.Add(new PtzPreset
+                {
+                    Token = preset.Attribute("token")?.Value ?? "",
+                    Name = preset.Element(tt + "Name")?.Value ?? ""
+                });
+            }
+        }
+
+        return presets;
+    }
+
+    /// <summary>
+    /// Move to absolute position
+    /// </summary>
+    public async Task<bool> AbsoluteMoveAsync(float pan, float tilt, float zoom = 0)
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            await GetMediaProfileAsync();
+
+        var securityHeader = GenerateSecurityHeader();
+        var panStr = pan.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var tiltStr = tilt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var zoomStr = zoom.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <tptz:AbsoluteMove>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:Position>
+                <tt:PanTilt x=""{panStr}"" y=""{tiltStr}""/>
+                <tt:Zoom x=""{zoomStr}""/>
+            </tptz:Position>
+        </tptz:AbsoluteMove>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
+        return response != null;
+    }
+
+    /// <summary>
+    /// Move relative to current position
+    /// </summary>
+    public async Task<bool> RelativeMoveAsync(float pan, float tilt, float zoom = 0)
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            await GetMediaProfileAsync();
+
+        var securityHeader = GenerateSecurityHeader();
+        var panStr = pan.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var tiltStr = tilt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var zoomStr = zoom.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <tptz:RelativeMove>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:Translation>
+                <tt:PanTilt x=""{panStr}"" y=""{tiltStr}""/>
+                <tt:Zoom x=""{zoomStr}""/>
+            </tptz:Translation>
+        </tptz:RelativeMove>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
+        return response != null;
+    }
+
     public async Task<string?> GetSnapshotUriAsync()
     {
         if (string.IsNullOrEmpty(_profileToken))
@@ -410,4 +575,12 @@ public class DeviceInfo
     public string Manufacturer { get; set; } = "";
     public string Model { get; set; } = "";
     public string FirmwareVersion { get; set; } = "";
+}
+
+public class PtzPreset
+{
+    public string Token { get; set; } = "";
+    public string Name { get; set; } = "";
+
+    public override string ToString() => $"[{Token}] {Name}";
 }
