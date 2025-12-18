@@ -524,6 +524,26 @@ public class OnvifClient : IDisposable
     }
 
     /// <summary>
+    /// Get alternative RTSP URLs to try if the default doesn't work
+    /// </summary>
+    public string[] GetAlternativeRtspUrls(StreamQuality quality = StreamQuality.Main)
+    {
+        var streamNum = quality == StreamQuality.Main ? "1" : "2";
+        var subtype = quality == StreamQuality.Main ? "0" : "1";
+        var channel = quality == StreamQuality.Main ? "101" : "102";
+
+        return new[]
+        {
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/{streamNum}",
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/stream{streamNum}",
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/Streaming/Channels/{channel}",
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/cam/realmonitor?channel=1&subtype={subtype}",
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/h264/ch1/{(quality == StreamQuality.Main ? "main" : "sub")}/av_stream",
+            $"rtsp://{_username}:{_password}@{_cameraIp}:554/live/ch00_{subtype}",
+        };
+    }
+
+    /// <summary>
     /// Get stream information for both streams
     /// </summary>
     public StreamInfo GetMainStreamInfo() => new StreamInfo

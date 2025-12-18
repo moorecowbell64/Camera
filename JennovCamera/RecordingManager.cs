@@ -30,6 +30,81 @@ public class RecordingManager : IDisposable
         _client = client;
         _currentQuality = quality;
         _rtspUrl = client.Onvif.GetRtspUrl(quality);
+        Console.WriteLine($"RecordingManager initialized with RTSP URL: {_rtspUrl}");
+    }
+
+    /// <summary>
+    /// Try to find the best RTSP URL by testing multiple patterns
+    /// Returns the URL that gives the highest resolution
+    /// </summary>
+    public string? AutoDetectBestRtspUrl()
+    {
+        var urls = _client.Onvif.GetAlternativeRtspUrls(_currentQuality);
+        string? bestUrl = null;
+        int bestResolution = 0;
+
+        Console.WriteLine("Auto-detecting best RTSP URL...");
+
+        foreach (var url in urls)
+        {
+            Console.WriteLine($"  Trying: {url.Replace(_client.Onvif.GetRtspUrl().Split('@')[0].Split("//")[1], "***:***")}");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                    "rtsp_transport;tcp|timeout;5000000");
+
+                using var capture = new VideoCapture(url, VideoCaptureAPIs.FFMPEG);
+                if (capture.IsOpened())
+                {
+                    // Try to read a frame to get actual resolution
+                    using var frame = new Mat();
+                    if (capture.Read(frame) && !frame.Empty())
+                    {
+                        var resolution = frame.Width * frame.Height;
+                        Console.WriteLine($"    -> Success! Resolution: {frame.Width}x{frame.Height}");
+
+                        if (resolution > bestResolution)
+                        {
+                            bestResolution = resolution;
+                            bestUrl = url;
+                        }
+                    }
+                    else
+                    {
+                        // Couldn't read frame, but capture opened - use reported dimensions
+                        var w = (int)capture.Get(VideoCaptureProperties.FrameWidth);
+                        var h = (int)capture.Get(VideoCaptureProperties.FrameHeight);
+                        if (w > 0 && h > 0)
+                        {
+                            var resolution = w * h;
+                            Console.WriteLine($"    -> Opened, reported: {w}x{h}");
+                            if (resolution > bestResolution)
+                            {
+                                bestResolution = resolution;
+                                bestUrl = url;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"    -> Failed to open");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    -> Error: {ex.Message}");
+            }
+        }
+
+        if (bestUrl != null)
+        {
+            Console.WriteLine($"Best URL found: {bestUrl.Replace(_client.Onvif.GetRtspUrl().Split('@')[0].Split("//")[1], "***:***")} ({bestResolution} pixels)");
+            _rtspUrl = bestUrl;
+        }
+
+        return bestUrl;
     }
 
     /// <summary>

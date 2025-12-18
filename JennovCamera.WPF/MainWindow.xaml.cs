@@ -82,6 +82,10 @@ public partial class MainWindow : System.Windows.Window
             _recording.FrameCaptured += OnFrameCaptured;
             _deviceManager = new DeviceManager(ip, username, password, 80);
 
+            // Auto-detect best RTSP URL for highest resolution
+            UpdateConnectionStatus("Detecting streams...", Brushes.Orange);
+            _recording.AutoDetectBestRtspUrl();
+
             // Update stream quality display
             UpdateStreamQualityDisplay();
 
