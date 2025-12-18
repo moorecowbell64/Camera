@@ -196,8 +196,6 @@ public partial class MainWindow : System.Windows.Window
 
     private int _lastFrameWidth = 0;
     private int _lastFrameHeight = 0;
-    private System.Windows.Threading.DispatcherTimer? _ptzTimer;
-    private Func<Task>? _currentPtzAction;
 
     private void OnFrameCaptured(object? sender, Mat frame)
     {
@@ -265,40 +263,22 @@ public partial class MainWindow : System.Windows.Window
             SpeedLabel.Content = _ptzSpeed.ToString("F1");
     }
 
-    // PTZ Button Handlers - Continuous movement while held
-    private void StartPtzMovement(Func<Task> action, UIElement sender)
+    // PTZ Button Handlers - Single command on press, stop on release
+    // ONVIF ContinuousMove keeps moving until Stop is called - no timer needed
+    private async void StartPtzMovement(Func<Task> action, UIElement sender)
     {
         if (_ptz == null) return;
 
         // Capture mouse to ensure we get MouseUp even if cursor leaves button
         sender.CaptureMouse();
 
-        // Execute immediately
-        _currentPtzAction = action;
-        _ = action();
-
-        // Start timer for continuous movement
-        _ptzTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(100)
-        };
-        _ptzTimer.Tick += async (s, e) =>
-        {
-            if (_currentPtzAction != null && _ptz != null)
-            {
-                await _currentPtzAction();
-            }
-        };
-        _ptzTimer.Start();
+        // Send single move command - camera continues until Stop
+        await action();
     }
 
     private async void StopPtzMovement(UIElement sender)
     {
         sender.ReleaseMouseCapture();
-
-        _ptzTimer?.Stop();
-        _ptzTimer = null;
-        _currentPtzAction = null;
 
         if (_ptz != null)
             await _ptz.StopMoveAsync();
@@ -341,10 +321,6 @@ public partial class MainWindow : System.Windows.Window
 
     private async void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        _ptzTimer?.Stop();
-        _ptzTimer = null;
-        _currentPtzAction = null;
-
         if (_ptz != null)
             await _ptz.StopMoveAsync();
     }
