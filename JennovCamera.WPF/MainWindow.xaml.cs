@@ -13,9 +13,11 @@ public partial class MainWindow : System.Windows.Window
     private PTZController? _ptz;
     private RecordingManager? _recording;
     private DeviceManager? _deviceManager;
+    private AudioManager? _audioManager;
     private bool _isConnected;
     private bool _isRecording;
-    private float _ptzSpeed = 0.5f;
+    private bool _isAudioEnabled;
+    private float _ptzSpeed = 1.0f;
     private VideoEncoderConfig? _currentEncoderConfig;
 
     public MainWindow()
@@ -30,6 +32,15 @@ public partial class MainWindow : System.Windows.Window
         BitrateCombo.SelectedIndex = 0; // Auto
         ProfileCombo.SelectedIndex = 0; // High
         OsdPositionCombo.SelectedIndex = 0; // Upper Left
+
+        // Auto-connect when window loads
+        Loaded += MainWindow_Loaded;
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        // Auto-connect to camera at startup
+        await ConnectAsync();
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -91,12 +102,21 @@ public partial class MainWindow : System.Windows.Window
             PTZControls.IsEnabled = true;
             PresetsGroup.IsEnabled = true;
             RecordingGroup.IsEnabled = true;
+            AudioGroup.IsEnabled = true;
 
             // Enable settings controls
             StreamSettingsGroup.IsEnabled = true;
             EncoderSettingsGroup.IsEnabled = true;
             OSDSettingsGroup.IsEnabled = true;
             DeviceInfoGroup.IsEnabled = true;
+
+            // Initialize audio manager
+            _audioManager = new AudioManager();
+            _audioManager.SetRtspUrl(ip, username, password);
+            _audioManager.StatusChanged += (s, status) =>
+            {
+                Dispatcher.Invoke(() => AudioStatusText.Text = status);
+            };
 
             // Load device info
             await LoadDeviceInfoAsync();
@@ -114,6 +134,12 @@ public partial class MainWindow : System.Windows.Window
     {
         try
         {
+            // Stop audio
+            _audioManager?.Stop();
+            _audioManager?.Dispose();
+            _audioManager = null;
+            _isAudioEnabled = false;
+
             if (_recording != null)
             {
                 _recording.FrameCaptured -= OnFrameCaptured;
@@ -147,6 +173,9 @@ public partial class MainWindow : System.Windows.Window
             PresetsGroup.IsEnabled = false;
             RecordingGroup.IsEnabled = false;
             RecordButton.Content = "Start Recording";
+            AudioGroup.IsEnabled = false;
+            AudioButton.Content = "Enable Audio";
+            AudioStatusText.Text = "Audio: Disabled";
 
             // Disable settings controls
             StreamSettingsGroup.IsEnabled = false;
@@ -394,6 +423,62 @@ public partial class MainWindow : System.Windows.Window
         finally
         {
             SnapshotButton.IsEnabled = true;
+        }
+    }
+
+    // ===== Audio Controls =====
+
+    private void AudioButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_audioManager == null) return;
+
+        if (!_isAudioEnabled)
+        {
+            if (_audioManager.Start())
+            {
+                _isAudioEnabled = true;
+                AudioButton.Content = "Disable Audio";
+                AudioButton.Background = (Brush)Application.Current.Resources["AccentGreenBrush"];
+            }
+            else
+            {
+                MessageBox.Show("Failed to start audio stream. The camera may not have audio support.",
+                    "Audio Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        else
+        {
+            _audioManager.Stop();
+            _isAudioEnabled = false;
+            AudioButton.Content = "Enable Audio";
+            AudioButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
+        }
+    }
+
+    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_audioManager != null)
+            _audioManager.Volume = (int)e.NewValue;
+
+        if (VolumeLabel != null)
+            VolumeLabel.Content = $"{(int)e.NewValue}%";
+    }
+
+    private void MuteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_audioManager == null) return;
+
+        _audioManager.ToggleMute();
+
+        if (_audioManager.IsMuted)
+        {
+            MuteButton.Content = "Unmute";
+            MuteButton.Background = (Brush)Application.Current.Resources["AccentOrangeBrush"];
+        }
+        else
+        {
+            MuteButton.Content = "Mute";
+            MuteButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
         }
     }
 
