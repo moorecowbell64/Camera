@@ -9,7 +9,7 @@
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="3*"/>
-            <ColumnDefinition Width="*" MinWidth="300"/>
+            <ColumnDefinition Width="*" MinWidth="320"/>
         </Grid.ColumnDefinitions>
 
         <!-- Left Panel - Video Display -->
@@ -45,6 +45,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock x:Name="ConnectionStatus"
@@ -55,8 +56,16 @@
                            FontSize="14"
                            VerticalAlignment="Center"/>
 
-                <TextBlock x:Name="RecordingStatus"
+                <TextBlock x:Name="StreamQualityStatus"
                            Grid.Column="2"
+                           Text="Stream: --"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           FontSize="14"
+                           VerticalAlignment="Center"
+                           Margin="0,0,20,0"/>
+
+                <TextBlock x:Name="RecordingStatus"
+                           Grid.Column="3"
                            Text="Not Recording"
                            Foreground="#888888"
                            FontSize="14"
@@ -64,157 +73,309 @@
             </Grid>
         </Grid>
 
-        <!-- Right Panel - Controls -->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="5">
+        <!-- Right Panel - Tabbed Controls -->
+        <TabControl Grid.Column="1" Margin="5" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource PrimaryBrush}">
 
-                <!-- Connection Controls -->
-                <GroupBox Header="Connection">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition/>
-                                <RowDefinition/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
+            <!-- Controls Tab -->
+            <TabItem Header="Controls">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
 
-                            <Label Grid.Row="0" Grid.Column="0" Content="IP:" VerticalAlignment="Center"/>
-                            <TextBox x:Name="CameraIpText" Grid.Row="0" Grid.Column="1"
-                                     Text="192.168.50.224" Margin="5"/>
+                        <!-- Connection Controls -->
+                        <GroupBox Header="Connection">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
 
-                            <Label Grid.Row="1" Grid.Column="0" Content="User:" VerticalAlignment="Center"/>
-                            <TextBox x:Name="UsernameText" Grid.Row="1" Grid.Column="1"
-                                     Text="admin" Margin="5"/>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="IP:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="CameraIpText" Grid.Row="0" Grid.Column="1"
+                                             Text="192.168.50.224" Margin="5"/>
 
-                            <Label Grid.Row="2" Grid.Column="0" Content="Pass:" VerticalAlignment="Center"/>
-                            <PasswordBox x:Name="PasswordText" Grid.Row="2" Grid.Column="1"
-                                         Margin="5" Background="#1E1E1E" Foreground="White"
-                                         BorderBrush="{StaticResource PrimaryBrush}"/>
-                        </Grid>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="User:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="UsernameText" Grid.Row="1" Grid.Column="1"
+                                             Text="admin" Margin="5"/>
 
-                        <Button x:Name="ConnectButton"
-                                Content="Connect Camera"
-                                Click="ConnectButton_Click"
-                                Height="40"/>
+                                    <Label Grid.Row="2" Grid.Column="0" Content="Pass:" VerticalAlignment="Center"/>
+                                    <PasswordBox x:Name="PasswordText" Grid.Row="2" Grid.Column="1"
+                                                 Margin="5" Background="#1E1E1E" Foreground="White"
+                                                 BorderBrush="{StaticResource PrimaryBrush}"/>
+                                </Grid>
+
+                                <Button x:Name="ConnectButton"
+                                        Content="Connect Camera"
+                                        Click="ConnectButton_Click"
+                                        Height="40"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- PTZ Controls -->
+                        <GroupBox Header="PTZ Controls" x:Name="PTZControls" IsEnabled="False">
+                            <StackPanel>
+                                <!-- Speed Slider -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Speed:" VerticalAlignment="Center"/>
+                                    <Slider x:Name="SpeedSlider" Grid.Column="1"
+                                            Minimum="0.1" Maximum="1.0" Value="0.5"
+                                            VerticalAlignment="Center" Margin="10,0"
+                                            ValueChanged="SpeedSlider_ValueChanged"/>
+                                    <Label x:Name="SpeedLabel" Grid.Column="2" Content="0.5"
+                                           Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold"/>
+                                </Grid>
+
+                                <!-- Directional Pad -->
+                                <Grid HorizontalAlignment="Center" Margin="0,10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="60"/>
+                                        <RowDefinition Height="60"/>
+                                        <RowDefinition Height="60"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Row="0" Grid.Column="1" Content="Up"
+                                            PreviewMouseDown="UpButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                    <Button Grid.Row="1" Grid.Column="0" Content="Left"
+                                            PreviewMouseDown="LeftButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                    <Button Grid.Row="1" Grid.Column="1" Content="Stop"
+                                            Click="StopButton_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Margin="2"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="Right"
+                                            PreviewMouseDown="RightButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                    <Button Grid.Row="2" Grid.Column="1" Content="Down"
+                                            PreviewMouseDown="DownButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                </Grid>
+
+                                <!-- Zoom Controls -->
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="Zoom +"
+                                            PreviewMouseDown="ZoomInButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                    <Button Grid.Column="1" Content="Zoom -"
+                                            PreviewMouseDown="ZoomOutButton_MouseDown"
+                                            PreviewMouseUp="PTZButton_MouseUp"
+                                            Margin="2"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Presets -->
+                        <GroupBox Header="Presets" x:Name="PresetsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Preset:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="PresetCombo" Grid.Column="1" Margin="5"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="1"/>
+                                        <ComboBoxItem Content="2"/>
+                                        <ComboBoxItem Content="3"/>
+                                        <ComboBoxItem Content="4"/>
+                                        <ComboBoxItem Content="5"/>
+                                        <ComboBoxItem Content="6"/>
+                                        <ComboBoxItem Content="7"/>
+                                        <ComboBoxItem Content="8"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Button Content="Go to Preset" Click="GotoPresetButton_Click"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Recording -->
+                        <GroupBox Header="Recording" x:Name="RecordingGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Button x:Name="RecordButton"
+                                        Content="Start Recording"
+                                        Click="RecordButton_Click"
+                                        Height="40"
+                                        Margin="0,0,0,10"/>
+                                <Button x:Name="SnapshotButton"
+                                        Content="Take Snapshot"
+                                        Click="SnapshotButton_Click"/>
+                            </StackPanel>
+                        </GroupBox>
+
                     </StackPanel>
-                </GroupBox>
+                </ScrollViewer>
+            </TabItem>
 
-                <!-- PTZ Controls -->
-                <GroupBox Header="PTZ Controls" x:Name="PTZControls" IsEnabled="False">
-                    <StackPanel>
-                        <!-- Speed Slider -->
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Label Content="Speed:" VerticalAlignment="Center"/>
-                            <Slider x:Name="SpeedSlider" Grid.Column="1"
-                                    Minimum="0.1" Maximum="1.0" Value="0.5"
-                                    VerticalAlignment="Center" Margin="10,0"
-                                    ValueChanged="SpeedSlider_ValueChanged"/>
-                            <Label x:Name="SpeedLabel" Grid.Column="2" Content="0.5"
-                                   Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold"/>
-                        </Grid>
+            <!-- Settings Tab -->
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
 
-                        <!-- Directional Pad -->
-                        <Grid HorizontalAlignment="Center" Margin="0,10">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="60"/>
-                                <RowDefinition Height="60"/>
-                                <RowDefinition Height="60"/>
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="60"/>
-                            </Grid.ColumnDefinitions>
+                        <!-- Stream Settings -->
+                        <GroupBox Header="Stream Quality" x:Name="StreamSettingsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Quality:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="StreamQualityCombo" Grid.Column="1" Margin="5"
+                                              SelectionChanged="StreamQualityCombo_SelectionChanged">
+                                        <ComboBoxItem Content="Main - 4K (3840x2160)" Tag="Main"/>
+                                        <ComboBoxItem Content="Sub - SD (720x480)" Tag="Sub"/>
+                                    </ComboBox>
+                                </Grid>
+                                <TextBlock x:Name="StreamUrlText"
+                                           Text="RTSP URL: --"
+                                           Foreground="#888888"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Margin="5"/>
+                                <Button Content="Apply Stream Quality"
+                                        Click="ApplyStreamQuality_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
 
-                            <Button Grid.Row="0" Grid.Column="1" Content="Up"
-                                    PreviewMouseDown="UpButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                            <Button Grid.Row="1" Grid.Column="0" Content="Left"
-                                    PreviewMouseDown="LeftButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                            <Button Grid.Row="1" Grid.Column="1" Content="Stop"
-                                    Click="StopButton_Click"
-                                    Background="{StaticResource AccentRedBrush}"
-                                    Margin="2"/>
-                            <Button Grid.Row="1" Grid.Column="2" Content="Right"
-                                    PreviewMouseDown="RightButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                            <Button Grid.Row="2" Grid.Column="1" Content="Down"
-                                    PreviewMouseDown="DownButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                        </Grid>
+                        <!-- Video Encoder Settings -->
+                        <GroupBox Header="Video Encoder" x:Name="EncoderSettingsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
 
-                        <!-- Zoom Controls -->
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Content="Zoom +"
-                                    PreviewMouseDown="ZoomInButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                            <Button Grid.Column="1" Content="Zoom -"
-                                    PreviewMouseDown="ZoomOutButton_MouseDown"
-                                    PreviewMouseUp="PTZButton_MouseUp"
-                                    Margin="2"/>
-                        </Grid>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="Resolution:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="ResolutionCombo" Grid.Row="0" Grid.Column="1" Margin="5">
+                                        <ComboBoxItem Content="3840x2160 (4K)" Tag="3840x2160"/>
+                                        <ComboBoxItem Content="2560x1440 (QHD)" Tag="2560x1440"/>
+                                        <ComboBoxItem Content="1920x1080 (1080p)" Tag="1920x1080"/>
+                                        <ComboBoxItem Content="1280x720 (720p)" Tag="1280x720"/>
+                                    </ComboBox>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="Frame Rate:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="FrameRateCombo" Grid.Row="1" Grid.Column="1" Margin="5">
+                                        <ComboBoxItem Content="60 fps" Tag="60"/>
+                                        <ComboBoxItem Content="30 fps" Tag="30"/>
+                                        <ComboBoxItem Content="20 fps" Tag="20"/>
+                                        <ComboBoxItem Content="15 fps" Tag="15"/>
+                                        <ComboBoxItem Content="10 fps" Tag="10"/>
+                                    </ComboBox>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="Bitrate:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="BitrateCombo" Grid.Row="2" Grid.Column="1" Margin="5">
+                                        <ComboBoxItem Content="Auto (0)" Tag="0"/>
+                                        <ComboBoxItem Content="8000 kbps" Tag="8000"/>
+                                        <ComboBoxItem Content="6000 kbps" Tag="6000"/>
+                                        <ComboBoxItem Content="4000 kbps" Tag="4000"/>
+                                        <ComboBoxItem Content="2000 kbps" Tag="2000"/>
+                                    </ComboBox>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="Profile:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="ProfileCombo" Grid.Row="3" Grid.Column="1" Margin="5">
+                                        <ComboBoxItem Content="High" Tag="High"/>
+                                        <ComboBoxItem Content="Main" Tag="Main"/>
+                                        <ComboBoxItem Content="Baseline" Tag="Baseline"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Button Content="Load Current Settings"
+                                        Click="LoadEncoderSettings_Click"
+                                        Margin="0,10,0,5"/>
+                                <Button Content="Apply Encoder Settings"
+                                        Click="ApplyEncoderSettings_Click"
+                                        Background="{StaticResource AccentOrangeBrush}"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- OSD Settings -->
+                        <GroupBox Header="OSD (On-Screen Display)" x:Name="OSDSettingsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Camera Title:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="OsdTitleText" Grid.Column="1" Margin="5"
+                                             Text="Camera"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Position:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="OsdPositionCombo" Grid.Column="1" Margin="5">
+                                        <ComboBoxItem Content="Upper Left" Tag="UpperLeft"/>
+                                        <ComboBoxItem Content="Upper Right" Tag="UpperRight"/>
+                                        <ComboBoxItem Content="Lower Left" Tag="LowerLeft"/>
+                                        <ComboBoxItem Content="Lower Right" Tag="LowerRight"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Button Content="Load Current OSD"
+                                        Click="LoadOsdSettings_Click"
+                                        Margin="0,0,0,5"/>
+                                <Button Content="Apply OSD Settings"
+                                        Click="ApplyOsdSettings_Click"
+                                        Background="{StaticResource AccentOrangeBrush}"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Device Info -->
+                        <GroupBox Header="Device Information" x:Name="DeviceInfoGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock x:Name="DeviceInfoText"
+                                           Text="Connect to view device info..."
+                                           Foreground="#AAAAAA"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                <Button Content="Refresh Device Info"
+                                        Click="RefreshDeviceInfo_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
                     </StackPanel>
-                </GroupBox>
+                </ScrollViewer>
+            </TabItem>
 
-                <!-- Presets -->
-                <GroupBox Header="Presets" x:Name="PresetsGroup" IsEnabled="False">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label Content="Preset:" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="PresetCombo" Grid.Column="1" Margin="5"
-                                      SelectedIndex="0">
-                                <ComboBoxItem Content="1"/>
-                                <ComboBoxItem Content="2"/>
-                                <ComboBoxItem Content="3"/>
-                                <ComboBoxItem Content="4"/>
-                                <ComboBoxItem Content="5"/>
-                                <ComboBoxItem Content="6"/>
-                                <ComboBoxItem Content="7"/>
-                                <ComboBoxItem Content="8"/>
-                            </ComboBox>
-                        </Grid>
-                        <Button Content="Go to Preset" Click="GotoPresetButton_Click"/>
-                    </StackPanel>
-                </GroupBox>
-
-                <!-- Recording -->
-                <GroupBox Header="Recording" x:Name="RecordingGroup" IsEnabled="False">
-                    <StackPanel>
-                        <Button x:Name="RecordButton"
-                                Content="Start Recording"
-                                Click="RecordButton_Click"
-                                Height="40"
-                                Margin="0,0,0,10"/>
-                        <Button x:Name="SnapshotButton"
-                                Content="Take Snapshot"
-                                Click="SnapshotButton_Click"/>
-                    </StackPanel>
-                </GroupBox>
-
-            </StackPanel>
-        </ScrollViewer>
+        </TabControl>
     </Grid>
 </Window>
