@@ -39,6 +39,9 @@ contains JSON-RPC API code, but this specific camera model does not respond to i
 | GetProfiles | Get media profiles | ✅ Working |
 | GetVideoSources | Get video sources | ✅ Working |
 | GetVideoEncoderConfigurations | Get encoder settings | ✅ Working |
+| SetVideoEncoderConfiguration | Modify encoder (res, bitrate, fps) | ✅ Working |
+| GetOSDs | Get OSD configurations | ✅ Working |
+| SetOSD | Modify OSD text (camera title) | ✅ Working |
 | GetSnapshotUri | Get snapshot URL | ✅ Working |
 | GetStreamUri | Get RTSP stream URL | ✅ Working |
 
@@ -51,8 +54,12 @@ contains JSON-RPC API code, but this specific camera model does not respond to i
 | SetPreset | Save current position as preset | ✅ Working |
 | RemovePreset | Delete a preset | ✅ Working |
 | ContinuousMove | PTZ continuous movement | ✅ Working |
+| AbsoluteMove | Move to absolute position | ✅ Working |
+| RelativeMove | Move relative to current position | ✅ Working |
 | Stop | Stop PTZ movement | ✅ Working |
 | GetStatus | Get PTZ status | ✅ Working |
+| GotoHomePosition | Move to home position | ❌ Not Supported |
+| SetHomePosition | Set home position | ❌ Not Supported |
 
 ### Imaging Service (`/onvif/Imaging`)
 
@@ -166,6 +173,43 @@ These configuration names are used with `configManager.getConfig`:
 |--------|-----|------------|
 | Main | `rtsp://admin:password@192.168.50.224:554/stream1` | 3840x2160 (4K) |
 | Sub | `rtsp://admin:password@192.168.50.224:554/stream2` | 720x480 |
+
+---
+
+## Video Encoder Configuration
+
+### Main Stream (VideoEncodeMain)
+- **Encoding**: H264 High profile
+- **Resolution**: 3840x2160 (4K)
+- **Frame Rate**: 1-60 fps (default 20)
+- **Bitrate**: 0-8192 kbps (0 = auto)
+- **GOP Length**: 1-200 (default 40)
+
+### Supported Resolutions
+| Resolution | Aspect |
+|------------|--------|
+| 3840x2160 | 16:9 (4K) |
+| 2592x1944 | 4:3 |
+| 2560x1440 | 16:9 |
+| 2304x1296 | 16:9 |
+| 1920x1080 | 16:9 (1080p) |
+| 1280x720 | 16:9 (720p) |
+
+---
+
+## OSD Configuration
+
+The camera supports two OSD elements:
+
+| Token | Type | Position | Description |
+|-------|------|----------|-------------|
+| osd_title | Plain Text | UpperLeft | Camera name/title |
+| osd_time | DateAndTime | LowerRight | Date/time overlay |
+
+### OSD Positions
+- UpperLeft, UpperRight
+- LowerLeft, LowerRight
+- Custom (x,y coordinates)
 
 ---
 

@@ -328,9 +328,11 @@ class Program
             Console.WriteLine("  4. Get/Set Hostname");
             Console.WriteLine("  5. Get/Set NTP");
             Console.WriteLine("  6. Show System Time");
-            Console.WriteLine("  7. Reboot Camera");
-            Console.WriteLine("  8. Factory Reset (Soft)");
-            Console.WriteLine("  9. Factory Reset (Hard) [DANGEROUS]");
+            Console.WriteLine("  7. Get/Set OSD (Camera Title)");
+            Console.WriteLine("  8. Modify Video Encoder");
+            Console.WriteLine("  9. Reboot Camera");
+            Console.WriteLine("  R. Factory Reset (Soft)");
+            Console.WriteLine("  H. Factory Reset (Hard) [DANGEROUS]");
             Console.WriteLine("  0. Back");
             Console.Write("\nSelect option: ");
 
@@ -397,6 +399,63 @@ class Program
                         break;
 
                     case "7":
+                        var osds = await deviceMgr.GetOSDsAsync();
+                        Console.WriteLine("\n  OSD Configurations:");
+                        foreach (var osd in osds)
+                        {
+                            Console.WriteLine($"    {osd}");
+                        }
+                        var titleOsd = osds.FirstOrDefault(o => o.Token == "osd_title");
+                        if (titleOsd != null)
+                        {
+                            Console.WriteLine($"\n  Current Title: {titleOsd.PlainText}");
+                            Console.Write("  New title (Enter to skip): ");
+                            var newTitle = Console.ReadLine();
+                            if (!string.IsNullOrWhiteSpace(newTitle))
+                            {
+                                var success = await deviceMgr.SetOSDAsync("osd_title", newTitle);
+                                Console.WriteLine(success ? "  OSD title updated!" : "  Failed to update OSD");
+                            }
+                        }
+                        break;
+
+                    case "8":
+                        var encConfigs = await deviceMgr.GetVideoEncoderConfigsAsync();
+                        Console.WriteLine("\n  Video Encoder Configurations:");
+                        for (int i = 0; i < encConfigs.Count; i++)
+                        {
+                            Console.WriteLine($"    {i + 1}. {encConfigs[i]}");
+                        }
+                        Console.Write("\n  Select encoder to modify (Enter to skip): ");
+                        var encChoice = Console.ReadLine();
+                        if (int.TryParse(encChoice, out int encIdx) && encIdx >= 1 && encIdx <= encConfigs.Count)
+                        {
+                            var enc = encConfigs[encIdx - 1];
+                            Console.WriteLine($"\n  Modifying: {enc.Name}");
+                            Console.WriteLine($"  Current: {enc.Width}x{enc.Height} @{enc.FrameRateLimit}fps, {enc.BitrateLimit}kbps");
+
+                            Console.Write($"  New Width [{enc.Width}]: ");
+                            var widthStr = Console.ReadLine();
+                            if (int.TryParse(widthStr, out int w)) enc.Width = w;
+
+                            Console.Write($"  New Height [{enc.Height}]: ");
+                            var heightStr = Console.ReadLine();
+                            if (int.TryParse(heightStr, out int h)) enc.Height = h;
+
+                            Console.Write($"  New FrameRate [{enc.FrameRateLimit}]: ");
+                            var frStr = Console.ReadLine();
+                            if (int.TryParse(frStr, out int fr)) enc.FrameRateLimit = fr;
+
+                            Console.Write($"  New Bitrate [{enc.BitrateLimit}]: ");
+                            var brStr = Console.ReadLine();
+                            if (int.TryParse(brStr, out int br)) enc.BitrateLimit = br;
+
+                            var success = await deviceMgr.SetVideoEncoderConfigAsync(enc);
+                            Console.WriteLine(success ? "  Encoder config updated!" : "  Failed to update encoder");
+                        }
+                        break;
+
+                    case "9":
                         Console.Write("\n  Are you sure you want to reboot the camera? (yes/no): ");
                         if (Console.ReadLine()?.ToLower() == "yes")
                         {
@@ -408,7 +467,8 @@ class Program
                         Console.WriteLine("  Reboot cancelled.");
                         break;
 
-                    case "8":
+                    case "R":
+                    case "r":
                         Console.WriteLine("\n  SOFT RESET: Resets settings but preserves network configuration.");
                         Console.Write("  Are you sure? (yes/no): ");
                         if (Console.ReadLine()?.ToLower() == "yes")
@@ -424,7 +484,8 @@ class Program
                         Console.WriteLine("  Reset cancelled.");
                         break;
 
-                    case "9":
+                    case "H":
+                    case "h":
                         Console.WriteLine("\n  WARNING: HARD RESET will erase ALL settings including network!");
                         Console.WriteLine("  You may need to physically access the camera to reconfigure.");
                         Console.Write("  Type 'FACTORY RESET' to confirm: ");

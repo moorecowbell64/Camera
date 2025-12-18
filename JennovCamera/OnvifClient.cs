@@ -518,6 +518,184 @@ public class OnvifClient : IDisposable
         return $"rtsp://{_username}:{_password}@{_cameraIp}:554/stream1";
     }
 
+    /// <summary>
+    /// Get video encoder configurations
+    /// </summary>
+    public async Task<List<VideoEncoderConfig>> GetVideoEncoderConfigurationsAsync()
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:trt=""http://www.onvif.org/ver10/media/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <trt:GetVideoEncoderConfigurations/>
+    </s:Body>
+</s:Envelope>";
+
+        var configs = new List<VideoEncoderConfig>();
+        var response = await SendOnvifRequestAsync("/onvif/Media", soapEnvelope);
+
+        if (response != null)
+        {
+            var ns = XNamespace.Get("http://www.onvif.org/ver10/media/wsdl");
+            var tt = XNamespace.Get("http://www.onvif.org/ver10/schema");
+
+            foreach (var config in response.Descendants(ns + "Configurations"))
+            {
+                var rateControl = config.Element(tt + "RateControl");
+                var resolution = config.Element(tt + "Resolution");
+                var h264 = config.Element(tt + "H264");
+
+                configs.Add(new VideoEncoderConfig
+                {
+                    Token = config.Attribute("token")?.Value ?? "",
+                    Name = config.Element(tt + "Name")?.Value ?? "",
+                    Encoding = config.Element(tt + "Encoding")?.Value ?? "",
+                    Width = int.TryParse(resolution?.Element(tt + "Width")?.Value, out var w) ? w : 0,
+                    Height = int.TryParse(resolution?.Element(tt + "Height")?.Value, out var h) ? h : 0,
+                    Quality = float.TryParse(config.Element(tt + "Quality")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var q) ? q : 0,
+                    FrameRateLimit = int.TryParse(rateControl?.Element(tt + "FrameRateLimit")?.Value, out var fr) ? fr : 0,
+                    BitrateLimit = int.TryParse(rateControl?.Element(tt + "BitrateLimit")?.Value, out var br) ? br : 0,
+                    GovLength = int.TryParse(h264?.Element(tt + "GovLength")?.Value, out var gov) ? gov : 0,
+                    H264Profile = h264?.Element(tt + "H264Profile")?.Value ?? ""
+                });
+            }
+        }
+
+        return configs;
+    }
+
+    /// <summary>
+    /// Set video encoder configuration (resolution, bitrate, framerate, etc.)
+    /// </summary>
+    public async Task<bool> SetVideoEncoderConfigurationAsync(VideoEncoderConfig config)
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var qualityStr = config.Quality.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:trt=""http://www.onvif.org/ver10/media/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <trt:SetVideoEncoderConfiguration>
+            <trt:Configuration token=""{config.Token}"">
+                <tt:Name>{config.Name}</tt:Name>
+                <tt:UseCount>1</tt:UseCount>
+                <tt:Encoding>{config.Encoding}</tt:Encoding>
+                <tt:Resolution>
+                    <tt:Width>{config.Width}</tt:Width>
+                    <tt:Height>{config.Height}</tt:Height>
+                </tt:Resolution>
+                <tt:Quality>{qualityStr}</tt:Quality>
+                <tt:RateControl>
+                    <tt:FrameRateLimit>{config.FrameRateLimit}</tt:FrameRateLimit>
+                    <tt:EncodingInterval>1</tt:EncodingInterval>
+                    <tt:BitrateLimit>{config.BitrateLimit}</tt:BitrateLimit>
+                </tt:RateControl>
+                <tt:H264>
+                    <tt:GovLength>{config.GovLength}</tt:GovLength>
+                    <tt:H264Profile>{config.H264Profile}</tt:H264Profile>
+                </tt:H264>
+                <tt:Multicast>
+                    <tt:Address>
+                        <tt:Type>IPv4</tt:Type>
+                        <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+                    </tt:Address>
+                    <tt:Port>0</tt:Port>
+                    <tt:TTL>0</tt:TTL>
+                    <tt:AutoStart>false</tt:AutoStart>
+                </tt:Multicast>
+                <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+            </trt:Configuration>
+            <trt:ForcePersistence>true</trt:ForcePersistence>
+        </trt:SetVideoEncoderConfiguration>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/Media", soapEnvelope);
+        return response != null;
+    }
+
+    /// <summary>
+    /// Get OSD (On-Screen Display) configurations
+    /// </summary>
+    public async Task<List<OsdConfig>> GetOSDsAsync(string videoSourceToken = "VideoSource_0")
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:trt=""http://www.onvif.org/ver10/media/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <trt:GetOSDs>
+            <trt:ConfigurationToken>{videoSourceToken}</trt:ConfigurationToken>
+        </trt:GetOSDs>
+    </s:Body>
+</s:Envelope>";
+
+        var osds = new List<OsdConfig>();
+        var response = await SendOnvifRequestAsync("/onvif/Media", soapEnvelope);
+
+        if (response != null)
+        {
+            var ns = XNamespace.Get("http://www.onvif.org/ver10/media/wsdl");
+            var tt = XNamespace.Get("http://www.onvif.org/ver10/schema");
+
+            foreach (var osd in response.Descendants(ns + "OSDs"))
+            {
+                var position = osd.Element(tt + "Position");
+                var textString = osd.Element(tt + "TextString");
+
+                osds.Add(new OsdConfig
+                {
+                    Token = osd.Attribute("token")?.Value ?? "",
+                    VideoSourceToken = osd.Element(tt + "VideoSourceConfigurationToken")?.Value ?? "",
+                    Type = osd.Element(tt + "Type")?.Value ?? "",
+                    PositionType = position?.Element(tt + "Type")?.Value ?? "",
+                    TextType = textString?.Element(tt + "Type")?.Value ?? "",
+                    PlainText = textString?.Element(tt + "PlainText")?.Value ?? ""
+                });
+            }
+        }
+
+        return osds;
+    }
+
+    /// <summary>
+    /// Set OSD text (e.g., camera title)
+    /// </summary>
+    public async Task<bool> SetOSDAsync(string osdToken, string text, string positionType = "UpperLeft", string videoSourceToken = "VideoSource_0")
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:trt=""http://www.onvif.org/ver10/media/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <trt:SetOSD>
+            <trt:OSD token=""{osdToken}"">
+                <tt:VideoSourceConfigurationToken>{videoSourceToken}</tt:VideoSourceConfigurationToken>
+                <tt:Type>Text</tt:Type>
+                <tt:Position>
+                    <tt:Type>{positionType}</tt:Type>
+                </tt:Position>
+                <tt:TextString>
+                    <tt:Type>Plain</tt:Type>
+                    <tt:PlainText>{text}</tt:PlainText>
+                </tt:TextString>
+            </trt:OSD>
+        </trt:SetOSD>
+    </s:Body>
+</s:Envelope>";
+
+        var response = await SendOnvifRequestAsync("/onvif/Media", soapEnvelope);
+        return response != null;
+    }
+
     private async Task<XDocument?> SendOnvifRequestAsync(string endpoint, string soapEnvelope)
     {
         try
