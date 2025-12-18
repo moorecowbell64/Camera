@@ -163,6 +163,8 @@ public partial class MainWindow : System.Windows.Window
 
     private int _lastFrameWidth = 0;
     private int _lastFrameHeight = 0;
+    private System.Windows.Threading.DispatcherTimer? _ptzTimer;
+    private Func<Task>? _currentPtzAction;
 
     private void OnFrameCaptured(object? sender, Mat frame)
     {
@@ -230,51 +232,86 @@ public partial class MainWindow : System.Windows.Window
             SpeedLabel.Content = _ptzSpeed.ToString("F1");
     }
 
-    // PTZ Button Handlers
-    private async void UpButton_MouseDown(object sender, MouseButtonEventArgs e)
+    // PTZ Button Handlers - Continuous movement while held
+    private void StartPtzMovement(Func<Task> action, UIElement sender)
     {
-        if (_ptz != null)
-            await _ptz.TiltUpAsync(_ptzSpeed);
+        if (_ptz == null) return;
+
+        // Capture mouse to ensure we get MouseUp even if cursor leaves button
+        sender.CaptureMouse();
+
+        // Execute immediately
+        _currentPtzAction = action;
+        _ = action();
+
+        // Start timer for continuous movement
+        _ptzTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _ptzTimer.Tick += async (s, e) =>
+        {
+            if (_currentPtzAction != null && _ptz != null)
+            {
+                await _currentPtzAction();
+            }
+        };
+        _ptzTimer.Start();
     }
 
-    private async void DownButton_MouseDown(object sender, MouseButtonEventArgs e)
+    private async void StopPtzMovement(UIElement sender)
     {
-        if (_ptz != null)
-            await _ptz.TiltDownAsync(_ptzSpeed);
-    }
+        sender.ReleaseMouseCapture();
 
-    private async void LeftButton_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_ptz != null)
-            await _ptz.PanLeftAsync(_ptzSpeed);
-    }
+        _ptzTimer?.Stop();
+        _ptzTimer = null;
+        _currentPtzAction = null;
 
-    private async void RightButton_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_ptz != null)
-            await _ptz.PanRightAsync(_ptzSpeed);
-    }
-
-    private async void ZoomInButton_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_ptz != null)
-            await _ptz.ZoomInAsync(0.3f);
-    }
-
-    private async void ZoomOutButton_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_ptz != null)
-            await _ptz.ZoomOutAsync(0.3f);
-    }
-
-    private async void PTZButton_MouseUp(object sender, MouseButtonEventArgs e)
-    {
         if (_ptz != null)
             await _ptz.StopMoveAsync();
     }
 
+    private void UpButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.TiltUpAsync(_ptzSpeed), (UIElement)sender);
+    }
+
+    private void DownButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.TiltDownAsync(_ptzSpeed), (UIElement)sender);
+    }
+
+    private void LeftButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.PanLeftAsync(_ptzSpeed), (UIElement)sender);
+    }
+
+    private void RightButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.PanRightAsync(_ptzSpeed), (UIElement)sender);
+    }
+
+    private void ZoomInButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.ZoomInAsync(0.3f), (UIElement)sender);
+    }
+
+    private void ZoomOutButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        StartPtzMovement(() => _ptz!.ZoomOutAsync(0.3f), (UIElement)sender);
+    }
+
+    private void PTZButton_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        StopPtzMovement((UIElement)sender);
+    }
+
     private async void StopButton_Click(object sender, RoutedEventArgs e)
     {
+        _ptzTimer?.Stop();
+        _ptzTimer = null;
+        _currentPtzAction = null;
+
         if (_ptz != null)
             await _ptz.StopMoveAsync();
     }
