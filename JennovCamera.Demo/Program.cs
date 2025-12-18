@@ -225,17 +225,21 @@ class Program
     {
         while (true)
         {
+            var qualityDesc = recording.CurrentQuality == StreamQuality.Main ? "4K (3840x2160)" : "SD (720x480)";
             Console.WriteLine("\n--- Recording & Streaming ---");
+            Console.WriteLine($"  Stream Quality: {recording.CurrentQuality} - {qualityDesc}");
             Console.WriteLine($"  Stream Status: {(recording.IsStreaming ? "STREAMING" : "Stopped")}");
             Console.WriteLine($"  Recording Status: {(recording.IsRecording ? "RECORDING" : "Stopped")}");
             Console.WriteLine();
             Console.WriteLine("  1. Take Snapshot (ONVIF)");
-            Console.WriteLine("  2. Start Streaming (RTSP)");
-            Console.WriteLine("  3. Stop Streaming");
-            Console.WriteLine("  4. Start Recording");
-            Console.WriteLine("  5. Stop Recording");
-            Console.WriteLine("  6. Capture Frame (from stream)");
-            Console.WriteLine("  7. Back");
+            Console.WriteLine("  2. Select Stream Quality");
+            Console.WriteLine("  3. Start Streaming (RTSP)");
+            Console.WriteLine("  4. Stop Streaming");
+            Console.WriteLine("  5. Start Recording");
+            Console.WriteLine("  6. Stop Recording");
+            Console.WriteLine("  7. Capture Frame (from stream)");
+            Console.WriteLine("  8. Show Stream URLs");
+            Console.WriteLine("  0. Back");
             Console.Write("\nSelect option: ");
 
             var choice = Console.ReadLine();
@@ -251,22 +255,37 @@ class Program
                     break;
 
                 case "2":
+                    Console.WriteLine("\n  Select Stream Quality:");
+                    Console.WriteLine("    1. Main Stream - 4K (3840x2160)");
+                    Console.WriteLine("    2. Sub Stream - SD (720x480)");
+                    Console.Write("  Choice: ");
+                    var qualityChoice = Console.ReadLine();
+                    if (qualityChoice == "1")
+                        recording.SetStreamQuality(StreamQuality.Main);
+                    else if (qualityChoice == "2")
+                        recording.SetStreamQuality(StreamQuality.Sub);
+                    else
+                        Console.WriteLine("  Invalid choice.");
+                    break;
+
+                case "3":
                     if (recording.IsStreaming)
                     {
                         Console.WriteLine("Already streaming.");
                     }
                     else
                     {
+                        Console.WriteLine($"Starting {recording.CurrentQuality} stream...");
                         var streamResult = recording.StartStreaming();
                         Console.WriteLine(streamResult ? "Streaming started!" : "Failed to start streaming");
                     }
                     break;
 
-                case "3":
+                case "4":
                     recording.StopStreaming();
                     break;
 
-                case "4":
+                case "5":
                     Console.Write("Filename (Enter for auto): ");
                     var recFilename = Console.ReadLine();
                     var recResult = recording.StartRecording(
@@ -274,7 +293,7 @@ class Program
                     Console.WriteLine(recResult ? "Recording started!" : "Failed to start recording");
                     break;
 
-                case "5":
+                case "6":
                     var savedFile = recording.StopRecording();
                     if (savedFile != null)
                     {
@@ -286,7 +305,7 @@ class Program
                     }
                     break;
 
-                case "6":
+                case "7":
                     if (!recording.IsStreaming)
                     {
                         Console.WriteLine("Start streaming first to capture frames.");
@@ -307,7 +326,16 @@ class Program
                     }
                     break;
 
-                case "7":
+                case "8":
+                    var (main, sub) = recording.GetAvailableStreams();
+                    Console.WriteLine("\n  Available Streams:");
+                    Console.WriteLine($"    Main: {main.Description}");
+                    Console.WriteLine($"           {main.RtspUrl}");
+                    Console.WriteLine($"    Sub:  {sub.Description}");
+                    Console.WriteLine($"           {sub.RtspUrl}");
+                    break;
+
+                case "0":
                     return;
 
                 default:

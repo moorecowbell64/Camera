@@ -13,19 +13,46 @@ public class RecordingManager : IDisposable
     private CancellationTokenSource? _cancellationTokenSource;
     private string? _currentRecordingPath;
     private string _rtspUrl;
+    private StreamQuality _currentQuality = StreamQuality.Main;
 
     public bool IsRecording => _isRecording;
     public bool IsStreaming => _isStreaming;
+    public StreamQuality CurrentQuality => _currentQuality;
+    public string CurrentRtspUrl => _rtspUrl;
 
     /// <summary>
     /// Event raised when a new frame is captured from the RTSP stream
     /// </summary>
     public event EventHandler<Mat>? FrameCaptured;
 
-    public RecordingManager(CameraClient client)
+    public RecordingManager(CameraClient client, StreamQuality quality = StreamQuality.Main)
     {
         _client = client;
-        _rtspUrl = client.Onvif.GetRtspUrl();
+        _currentQuality = quality;
+        _rtspUrl = client.Onvif.GetRtspUrl(quality);
+    }
+
+    /// <summary>
+    /// Set stream quality (Main = 4K, Sub = 480p)
+    /// </summary>
+    public void SetStreamQuality(StreamQuality quality)
+    {
+        if (_isStreaming)
+        {
+            Console.WriteLine("Cannot change stream quality while streaming. Stop streaming first.");
+            return;
+        }
+        _currentQuality = quality;
+        _rtspUrl = _client.Onvif.GetRtspUrl(quality);
+        Console.WriteLine($"Stream quality set to: {quality} ({(_currentQuality == StreamQuality.Main ? "4K" : "SD")})");
+    }
+
+    /// <summary>
+    /// Get information about available streams
+    /// </summary>
+    public (StreamInfo main, StreamInfo sub) GetAvailableStreams()
+    {
+        return (_client.Onvif.GetMainStreamInfo(), _client.Onvif.GetSubStreamInfo());
     }
 
     /// <summary>

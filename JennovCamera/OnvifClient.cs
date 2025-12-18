@@ -513,10 +513,36 @@ public class OnvifClient : IDisposable
         return null;
     }
 
-    public string GetRtspUrl()
+    /// <summary>
+    /// Get RTSP URL for the specified stream quality
+    /// </summary>
+    /// <param name="quality">Main (4K) or Sub (480p) stream</param>
+    public string GetRtspUrl(StreamQuality quality = StreamQuality.Main)
     {
-        return $"rtsp://{_username}:{_password}@{_cameraIp}:554/stream1";
+        var streamNum = quality == StreamQuality.Main ? "1" : "2";
+        return $"rtsp://{_username}:{_password}@{_cameraIp}:554/stream{streamNum}";
     }
+
+    /// <summary>
+    /// Get stream information for both streams
+    /// </summary>
+    public StreamInfo GetMainStreamInfo() => new StreamInfo
+    {
+        Quality = StreamQuality.Main,
+        RtspUrl = GetRtspUrl(StreamQuality.Main),
+        Width = 3840,
+        Height = 2160,
+        Description = "4K Ultra HD (3840x2160)"
+    };
+
+    public StreamInfo GetSubStreamInfo() => new StreamInfo
+    {
+        Quality = StreamQuality.Sub,
+        RtspUrl = GetRtspUrl(StreamQuality.Sub),
+        Width = 720,
+        Height = 480,
+        Description = "SD (720x480)"
+    };
 
     /// <summary>
     /// Get video encoder configurations
@@ -761,4 +787,29 @@ public class PtzPreset
     public string Name { get; set; } = "";
 
     public override string ToString() => $"[{Token}] {Name}";
+}
+
+/// <summary>
+/// Stream quality selection
+/// </summary>
+public enum StreamQuality
+{
+    /// <summary>Main stream - 4K (3840x2160)</summary>
+    Main,
+    /// <summary>Sub stream - SD (720x480)</summary>
+    Sub
+}
+
+/// <summary>
+/// Stream information
+/// </summary>
+public class StreamInfo
+{
+    public StreamQuality Quality { get; set; }
+    public string RtspUrl { get; set; } = "";
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public string Description { get; set; } = "";
+
+    public override string ToString() => $"{Quality}: {Description} - {RtspUrl}";
 }
