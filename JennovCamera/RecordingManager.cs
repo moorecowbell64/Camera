@@ -640,12 +640,16 @@ public class RecordingManager : IDisposable
         // Get quality-based audio settings
         var audioSettings = GetAudioSettings(_recordingQuality);
 
-        // FFmpeg arguments optimized for maximum quality
+        // FFmpeg arguments optimized for maximum quality and reliability
         // Video: Direct copy from source (no quality loss)
         // Audio: High-quality AAC encoding with settings based on quality preset
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
             $"-rtsp_transport tcp " +
-            $"-buffer_size 8192k " +           // Large buffer for 4K streams
+            $"-rtsp_flags prefer_tcp " +        // Prefer TCP for reliability
+            $"-buffer_size 8192k " +            // Large buffer for 4K streams
+            $"-reconnect 1 " +                  // Enable reconnection
+            $"-reconnect_streamed 1 " +         // Reconnect even for streamed content
+            $"-reconnect_delay_max 5 " +        // Max 5 seconds between reconnects
             $"-i \"{_rtspUrl}\" " +
             $"-c:v copy " +                     // Copy video stream directly (no re-encoding = no quality loss)
             $"{audioSettings} " +               // Quality-based audio encoding
