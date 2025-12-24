@@ -140,6 +140,9 @@ public partial class MainWindow : System.Windows.Window
         ProfileCombo.SelectedIndex = 0; // High
         OsdPositionCombo.SelectedIndex = 0; // Upper Left
 
+        // Initialize FFmpeg settings
+        InitializeFFmpegSettings();
+
         // Done initializing
         _isInitializing = false;
 
@@ -213,6 +216,116 @@ public partial class MainWindow : System.Windows.Window
             await ConnectAsync();
         }
     }
+
+    #region Keyboard Shortcuts
+
+    private HashSet<Key> _pressedKeys = new HashSet<Key>();
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Ignore if focused on a text input
+        if (e.OriginalSource is TextBox || e.OriginalSource is PasswordBox)
+            return;
+
+        // Ignore if not connected
+        if (!_isConnected || _ptz == null)
+            return;
+
+        // Prevent auto-repeat from causing multiple commands
+        if (_pressedKeys.Contains(e.Key))
+            return;
+
+        _pressedKeys.Add(e.Key);
+        e.Handled = true;
+
+        var speed = (float)SpeedSlider.Value;
+
+        switch (e.Key)
+        {
+            // Arrow keys for PTZ
+            case Key.Up:
+                _ptz.ContinuousMoveFast(0, speed, 0);
+                break;
+            case Key.Down:
+                _ptz.ContinuousMoveFast(0, -speed, 0);
+                break;
+            case Key.Left:
+                _ptz.ContinuousMoveFast(-speed, 0, 0);
+                break;
+            case Key.Right:
+                _ptz.ContinuousMoveFast(speed, 0, 0);
+                break;
+
+            // Zoom with + and -
+            case Key.Add:
+            case Key.OemPlus:
+                _ptz.ContinuousMoveFast(0, 0, speed);
+                break;
+            case Key.Subtract:
+            case Key.OemMinus:
+                _ptz.ContinuousMoveFast(0, 0, -speed);
+                break;
+
+            // Focus with W (near) and S (far)
+            case Key.W:
+                _ptz.FocusNearFast(speed);
+                break;
+            case Key.S:
+                _ptz.FocusFarFast(speed);
+                break;
+
+            // Auto focus with F
+            case Key.F:
+                _ptz.AutoFocusFast();
+                break;
+
+            // Stop all movement with Space
+            case Key.Space:
+                _ptz.StopFast();
+                _ptz.FocusStopFast();
+                break;
+
+            default:
+                e.Handled = false;
+                break;
+        }
+    }
+
+    private void Window_KeyUp(object sender, KeyEventArgs e)
+    {
+        if (!_pressedKeys.Contains(e.Key))
+            return;
+
+        _pressedKeys.Remove(e.Key);
+
+        // Ignore if not connected
+        if (!_isConnected || _ptz == null)
+            return;
+
+        // Stop movement when key is released
+        switch (e.Key)
+        {
+            case Key.Up:
+            case Key.Down:
+            case Key.Left:
+            case Key.Right:
+            case Key.Add:
+            case Key.OemPlus:
+            case Key.Subtract:
+            case Key.OemMinus:
+                _ptz.StopFast();
+                e.Handled = true;
+                break;
+
+            case Key.W:
+            case Key.S:
+                _ptz.FocusStopFast();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    #endregion
 
     private async Task ConnectAsync()
     {
@@ -1258,6 +1371,40 @@ public partial class MainWindow : System.Windows.Window
                 return;
             }
 
+            // Validate folder exists and is writable
+            try
+            {
+                if (!System.IO.Directory.Exists(_recording.RecordingFolder))
+                {
+                    var result = MessageBox.Show(
+                        $"Recording folder does not exist:\n{_recording.RecordingFolder}\n\nCreate it now?",
+                        "Recording Folder", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        System.IO.Directory.CreateDirectory(_recording.RecordingFolder);
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Cannot access recording folder:\n{ex.Message}",
+                    "Recording Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Check FFmpeg is available
+            if (RecordingManager.GetFFmpegPath() == null)
+            {
+                MessageBox.Show("FFmpeg is not installed or configured.\n\nPlease configure FFmpeg in the Settings tab.",
+                    "Recording Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             if (_recording.StartRecording())
             {
                 _isRecording = true;
@@ -1722,6 +1869,77 @@ public partial class MainWindow : System.Windows.Window
             }
         }
     }
+
+    #region FFmpeg Settings
+
+    private void InitializeFFmpegSettings()
+    {
+        // Load custom path from settings
+        FFmpegPathText.Text = _settings.FFmpegPath;
+        if (!string.IsNullOrEmpty(_settings.FFmpegPath))
+        {
+            RecordingManager.SetCustomFFmpegPath(_settings.FFmpegPath);
+        }
+
+        // Detect FFmpeg
+        UpdateFFmpegStatus();
+    }
+
+    private void UpdateFFmpegStatus()
+    {
+        var path = RecordingManager.GetFFmpegPath();
+        if (path != null)
+        {
+            FFmpegStatusText.Text = $"FFmpeg: Found\n{path}";
+            FFmpegStatusText.Foreground = Brushes.LimeGreen;
+        }
+        else
+        {
+            FFmpegStatusText.Text = "FFmpeg: Not found\nRecording requires FFmpeg";
+            FFmpegStatusText.Foreground = Brushes.Orange;
+        }
+    }
+
+    private void BrowseFFmpegPath_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select FFmpeg Executable",
+            Filter = "FFmpeg|ffmpeg.exe|All Executables|*.exe",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            FFmpegPathText.Text = dialog.FileName;
+            _settings.FFmpegPath = dialog.FileName;
+            _settings.Save();
+            RecordingManager.SetCustomFFmpegPath(dialog.FileName);
+            UpdateFFmpegStatus();
+        }
+    }
+
+    private void DetectFFmpeg_Click(object sender, RoutedEventArgs e)
+    {
+        // Clear custom path to force auto-detection
+        var customPath = FFmpegPathText.Text.Trim();
+        if (!string.IsNullOrEmpty(customPath))
+        {
+            _settings.FFmpegPath = customPath;
+            _settings.Save();
+            RecordingManager.SetCustomFFmpegPath(customPath);
+        }
+        else
+        {
+            _settings.FFmpegPath = "";
+            _settings.Save();
+            RecordingManager.SetCustomFFmpegPath(null);
+        }
+
+        UpdateFFmpegStatus();
+    }
+
+    #endregion
 
     protected override void OnClosed(EventArgs e)
     {

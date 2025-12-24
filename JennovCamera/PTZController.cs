@@ -87,4 +87,56 @@ public class PTZController
         await Task.Delay(durationMs);
         return await StopMoveAsync();
     }
+
+    #region Fast (Fire-and-Forget) Methods
+
+    /// <summary>
+    /// Start continuous movement immediately (fire-and-forget)
+    /// </summary>
+    public void ContinuousMoveFast(float pan, float tilt, float zoom = 0)
+    {
+        _client.Onvif.ContinuousMoveFast(pan, tilt, zoom);
+    }
+
+    /// <summary>
+    /// Stop all PTZ movement immediately (fire-and-forget)
+    /// </summary>
+    public void StopFast()
+    {
+        _client.Onvif.StopFast();
+    }
+
+    /// <summary>
+    /// Move focus toward near objects (fire-and-forget)
+    /// </summary>
+    public void FocusNearFast(float speed = 1.0f)
+    {
+        _client.Onvif.FocusNearFast(speed);
+    }
+
+    /// <summary>
+    /// Move focus toward far objects (fire-and-forget)
+    /// </summary>
+    public void FocusFarFast(float speed = 1.0f)
+    {
+        _client.Onvif.FocusFarFast(speed);
+    }
+
+    /// <summary>
+    /// Stop focus movement (fire-and-forget)
+    /// </summary>
+    public void FocusStopFast()
+    {
+        _client.Onvif.FocusStopFast();
+    }
+
+    /// <summary>
+    /// Trigger auto-focus (fire-and-forget)
+    /// </summary>
+    public void AutoFocusFast()
+    {
+        _client.Onvif.AutoFocusFast();
+    }
+
+    #endregion
 }

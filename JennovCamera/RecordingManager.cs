@@ -271,7 +271,7 @@ public class RecordingManager : IDisposable
     }
 
     // Known FFmpeg installation paths to check
-    private static readonly string[] FFmpegPaths = new[]
+    private static readonly string[] FFmpegSearchPaths = new[]
     {
         "ffmpeg", // In PATH
         @"C:\ffmpeg\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe",
@@ -281,6 +281,50 @@ public class RecordingManager : IDisposable
     };
 
     private static string? _ffmpegPath;
+    private static string? _customFfmpegPath;
+
+    /// <summary>
+    /// Set a custom FFmpeg path (takes priority over auto-detection)
+    /// </summary>
+    public static void SetCustomFFmpegPath(string? path)
+    {
+        _customFfmpegPath = path;
+        _ffmpegPath = null; // Reset cached path to force re-detection
+    }
+
+    /// <summary>
+    /// Validate that an FFmpeg path is executable
+    /// </summary>
+    private static bool ValidateFFmpegPath(string path)
+    {
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = path,
+                    Arguments = "-version",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                }
+            };
+            process.Start();
+            process.WaitForExit(3000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Get the current FFmpeg path (after detection)
+    /// </summary>
+    public static string? GetFFmpegPath() => _ffmpegPath ?? FindFFmpegPath();
 
     /// <summary>
     /// Find FFmpeg executable path
@@ -290,7 +334,19 @@ public class RecordingManager : IDisposable
         if (_ffmpegPath != null)
             return _ffmpegPath;
 
-        foreach (var path in FFmpegPaths)
+        // Check custom path first
+        if (!string.IsNullOrEmpty(_customFfmpegPath))
+        {
+            if (ValidateFFmpegPath(_customFfmpegPath))
+            {
+                _ffmpegPath = _customFfmpegPath;
+                Console.WriteLine($"Using custom FFmpeg path: {_customFfmpegPath}");
+                return _ffmpegPath;
+            }
+            Console.WriteLine($"Custom FFmpeg path invalid: {_customFfmpegPath}");
+        }
+
+        foreach (var path in FFmpegSearchPaths)
         {
             try
             {

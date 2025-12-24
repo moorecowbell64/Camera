@@ -1,4 +1,6 @@
 <Window x:Class="JennovCamera.WPF.MainWindow"
+        KeyDown="Window_KeyDown"
+        KeyUp="Window_KeyUp"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Jennov PTZ Camera Control"
@@ -526,6 +528,34 @@
                                            TextWrapping="Wrap"/>
                                 <Button Content="Refresh Device Info"
                                         Click="RefreshDeviceInfo_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- FFmpeg Settings -->
+                        <GroupBox Header="FFmpeg (Recording)">
+                            <StackPanel>
+                                <TextBlock x:Name="FFmpegStatusText"
+                                           Text="FFmpeg: Checking..."
+                                           Foreground="#AAAAAA"
+                                           FontSize="12"
+                                           Margin="0,0,0,10"/>
+                                <Label Content="Custom Path (optional):" Margin="0,0,0,2"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="FFmpegPathText"
+                                             Text=""
+                                             VerticalContentAlignment="Center"
+                                             Height="28"/>
+                                    <Button Grid.Column="1" Content="Browse"
+                                            Click="BrowseFFmpegPath_Click"
+                                            Width="60" Margin="5,0,0,0"/>
+                                </Grid>
+                                <Button Content="Detect FFmpeg"
+                                        Click="DetectFFmpeg_Click"
                                         Margin="0,10,0,0"/>
                             </StackPanel>
                         </GroupBox>
