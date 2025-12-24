@@ -582,11 +582,12 @@ public class RecordingManager : IDisposable
         var segmentSeconds = (int)_segmentDuration.TotalSeconds;
 
         // FFmpeg arguments - simplified for compatibility
+        // Audio: AAC at 256kbps stereo with high quality profile
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
             $"-rtsp_transport tcp " +
             $"-i \"{_rtspUrl}\" " +
             $"-c:v copy " +
-            $"-c:a aac -b:a 128k " +
+            $"-c:a aac -b:a 256k -ac 2 -ar 48000 " +
             $"-movflags frag_keyframe+empty_moov " +
             $"-t {segmentSeconds} " +
             $"-y \"{_currentRecordingPath}\"";
