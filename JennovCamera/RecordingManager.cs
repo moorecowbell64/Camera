@@ -85,27 +85,23 @@ public class RecordingManager : IDisposable
     /// </summary>
     private static string GetAudioSettings(RecordingQuality quality)
     {
+        // Keep audio processing simple to maintain A/V sync
+        // Complex filters like loudnorm cause latency and desync
         return quality switch
         {
             RecordingQuality.Standard =>
-                // Standard: 192kbps AAC stereo @ 44.1kHz
-                "-c:a aac -b:a 192k -ac 2 -ar 44100",
+                "-c:a aac -b:a 192k",
 
             RecordingQuality.High =>
-                // High: 320kbps AAC stereo @ 48kHz (max useful AAC bitrate)
-                "-c:a aac -b:a 320k -ac 2 -ar 48000",
+                "-c:a aac -b:a 256k",
 
             RecordingQuality.Maximum =>
-                // Maximum: 320kbps AAC stereo @ 48kHz with quality optimization
-                // Using -q:a 1 for highest VBR quality mode
-                "-c:a aac -b:a 320k -ac 2 -ar 48000 -profile:a aac_low",
+                "-c:a aac -b:a 320k",
 
             RecordingQuality.Lossless =>
-                // Lossless: FLAC encoding (note: requires MKV container, but we'll try)
-                // Fall back to highest AAC if FLAC doesn't work with MP4
-                "-c:a aac -b:a 320k -ac 2 -ar 48000 -profile:a aac_low",
+                "-c:a aac -b:a 320k",
 
-            _ => "-c:a aac -b:a 320k -ac 2 -ar 48000"
+            _ => "-c:a aac -b:a 320k"
         };
     }
 
@@ -640,14 +636,16 @@ public class RecordingManager : IDisposable
         // Get quality-based audio settings
         var audioSettings = GetAudioSettings(_recordingQuality);
 
-        // FFmpeg arguments optimized for maximum quality and reliability
+        // FFmpeg arguments optimized for maximum quality and A/V sync
         // Video: Direct copy from source (no quality loss)
         // Audio: High-quality AAC encoding with settings based on quality preset
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
+            $"-use_wallclock_as_timestamps 1 " + // Use real timestamps for RTSP
             $"-rtsp_transport tcp " +
             $"-i \"{_rtspUrl}\" " +
             $"-c:v copy " +                     // Copy video stream directly (no re-encoding = no quality loss)
             $"{audioSettings} " +               // Quality-based audio encoding
+            $"-async 1 " +                      // Sync audio to video timestamps
             $"-max_muxing_queue_size 1024 " +   // Prevent muxing buffer issues
             $"-movflags frag_keyframe+empty_moov " +
             $"-t {segmentSeconds} " +
