@@ -25,7 +25,7 @@ public class RecordingManager : IDisposable
     private int _stagnantFileSizeCount;
     private bool _ffmpegHasError;
     private string? _ffmpegLastError;
-    private bool _useBufferedRecording = true;  // Enable buffered mode by default
+    private bool _useBufferedRecording = false;  // Disabled - pipe output has issues on Windows
     private int _previewWidth = 960;   // Preview resolution (scaled down for performance)
     private int _previewHeight = 540;
 
