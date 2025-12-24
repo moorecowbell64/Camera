@@ -97,6 +97,11 @@ public class RecordingManager : IDisposable
             catch { }
         }
 
+        // Check disk space
+        status.AvailableDiskSpace = GetAvailableDiskSpace(_recordingFolder);
+        // Low disk space warning at 2 GB
+        status.LowDiskSpace = status.AvailableDiskSpace >= 0 && status.AvailableDiskSpace < 2L * 1024 * 1024 * 1024;
+
         return status;
     }
 
@@ -435,6 +440,42 @@ public class RecordingManager : IDisposable
     public string? LastError { get; private set; }
 
     /// <summary>
+    /// Get available disk space in bytes for the recording folder
+    /// </summary>
+    public static long GetAvailableDiskSpace(string folder)
+    {
+        try
+        {
+            var driveInfo = new DriveInfo(Path.GetPathRoot(folder) ?? "C:");
+            return driveInfo.AvailableFreeSpace;
+        }
+        catch
+        {
+            return -1; // Unknown
+        }
+    }
+
+    /// <summary>
+    /// Check if there's enough disk space for recording (minimum 5 GB recommended)
+    /// </summary>
+    public static bool HasSufficientDiskSpace(string folder, long minimumBytes = 5L * 1024 * 1024 * 1024)
+    {
+        var available = GetAvailableDiskSpace(folder);
+        return available < 0 || available >= minimumBytes; // -1 means unknown, allow recording
+    }
+
+    /// <summary>
+    /// Format bytes as human-readable string
+    /// </summary>
+    public static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / 1024.0 / 1024.0:F1} MB";
+        return $"{bytes / 1024.0 / 1024.0 / 1024.0:F1} GB";
+    }
+
+    /// <summary>
     /// Start recording with FFmpeg (includes audio)
     /// </summary>
     public bool StartRecording(string? baseName = null)
@@ -472,6 +513,18 @@ public class RecordingManager : IDisposable
             {
                 Directory.CreateDirectory(_recordingFolder);
             }
+
+            // Check disk space (minimum 5 GB for 4K recording)
+            var availableSpace = GetAvailableDiskSpace(_recordingFolder);
+            var minimumSpace = 5L * 1024 * 1024 * 1024; // 5 GB
+            if (availableSpace >= 0 && availableSpace < minimumSpace)
+            {
+                LastError = $"Insufficient disk space.\n\nAvailable: {FormatBytes(availableSpace)}\nRequired: {FormatBytes(minimumSpace)} minimum\n\nFree up space or choose a different recording folder.";
+                Console.WriteLine(LastError);
+                return false;
+            }
+
+            Console.WriteLine($"Disk space available: {FormatBytes(availableSpace)}");
 
             _segmentNumber = 1;
             _recordingStartTime = DateTime.Now;
@@ -925,4 +978,6 @@ public class RecordingStatus
     public double BitrateMbps { get; set; }
     public bool HasError { get; set; }
     public string? ErrorMessage { get; set; }
+    public long AvailableDiskSpace { get; set; }
+    public bool LowDiskSpace { get; set; }
 }

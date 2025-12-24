@@ -1654,8 +1654,14 @@ public partial class MainWindow : System.Windows.Window
 
         RecordingSegmentInfo.Text = $"Seg {status.SegmentNumber} | {elapsed:mm\\:ss}{sizeStr}{bitrateStr}";
 
+        // Show disk space warning
+        if (status.LowDiskSpace)
+        {
+            var spaceGB = status.AvailableDiskSpace / 1024.0 / 1024.0 / 1024.0;
+            UpdateRecordingStatus($"LOW DISK: {spaceGB:F1} GB left!", Brushes.Orange);
+        }
         // Show error status
-        if (status.HasError)
+        else if (status.HasError)
         {
             UpdateRecordingStatus($"Error: {status.ErrorMessage}", Brushes.Orange);
         }
