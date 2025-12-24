@@ -645,11 +645,6 @@ public class RecordingManager : IDisposable
         // Audio: High-quality AAC encoding with settings based on quality preset
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
             $"-rtsp_transport tcp " +
-            $"-rtsp_flags prefer_tcp " +        // Prefer TCP for reliability
-            $"-buffer_size 8192k " +            // Large buffer for 4K streams
-            $"-reconnect 1 " +                  // Enable reconnection
-            $"-reconnect_streamed 1 " +         // Reconnect even for streamed content
-            $"-reconnect_delay_max 5 " +        // Max 5 seconds between reconnects
             $"-i \"{_rtspUrl}\" " +
             $"-c:v copy " +                     // Copy video stream directly (no re-encoding = no quality loss)
             $"{audioSettings} " +               // Quality-based audio encoding
