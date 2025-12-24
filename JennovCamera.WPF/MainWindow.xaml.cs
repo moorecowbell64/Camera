@@ -1516,6 +1516,24 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private void RecordingQualityCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_recording == null) return;
+
+        var selectedItem = RecordingQualityCombo.SelectedItem as ComboBoxItem;
+        if (selectedItem?.Tag is string qualityTag)
+        {
+            _recording.Quality = qualityTag switch
+            {
+                "Standard" => RecordingQuality.Standard,
+                "High" => RecordingQuality.High,
+                "Maximum" => RecordingQuality.Maximum,
+                _ => RecordingQuality.Maximum
+            };
+            Console.WriteLine($"Recording quality set to: {_recording.Quality}");
+        }
+    }
+
     private void RecordButton_Click(object sender, RoutedEventArgs e)
     {
         if (_recording == null) return;
@@ -1973,6 +1991,59 @@ public partial class MainWindow : System.Windows.Window
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to apply encoder settings: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void OptimizeMaxQuality_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client == null)
+        {
+            MessageBox.Show("Please connect to the camera first.",
+                "Not Connected", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var result = MessageBox.Show(
+            "Optimize camera for maximum quality?\n\n" +
+            "This will set:\n" +
+            "• Resolution: 4K (3840x2160)\n" +
+            "• Bitrate: 8 Mbps\n" +
+            "• Frame Rate: 25 fps\n" +
+            "• H.264 Profile: High\n\n" +
+            "The stream will restart after applying.",
+            "Optimize Camera", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var success = await _client.Onvif.OptimizeForMaxQualityAsync();
+
+            if (success)
+            {
+                MessageBox.Show(
+                    "Camera optimized for maximum quality!\n\n" +
+                    "Settings applied:\n" +
+                    "• 4K resolution (3840x2160)\n" +
+                    "• 8 Mbps bitrate\n" +
+                    "• 25 fps frame rate\n" +
+                    "• H.264 High Profile\n\n" +
+                    "Reconnect to see the changes.",
+                    "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // Reload encoder settings to reflect changes
+                LoadEncoderSettings_Click(sender, e);
+            }
+            else
+            {
+                MessageBox.Show("Failed to optimize camera settings.\nThe camera may not support these settings.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to optimize camera: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

@@ -822,6 +822,47 @@ public class OnvifClient : IDisposable
     }
 
     /// <summary>
+    /// Optimize video encoder for maximum quality
+    /// Sets: 4K resolution, 8Mbps bitrate, 25fps, High profile
+    /// </summary>
+    public async Task<bool> OptimizeForMaxQualityAsync()
+    {
+        var configs = await GetVideoEncoderConfigurationsAsync();
+        if (configs.Count == 0)
+        {
+            Console.WriteLine("No video encoder configurations found");
+            return false;
+        }
+
+        // Find the main stream configuration (usually the first one or highest resolution)
+        var mainConfig = configs.OrderByDescending(c => c.Width * c.Height).First();
+
+        Console.WriteLine($"Optimizing encoder: {mainConfig.Token} ({mainConfig.Width}x{mainConfig.Height})");
+
+        // Set maximum quality parameters
+        mainConfig.Width = 3840;           // 4K
+        mainConfig.Height = 2160;
+        mainConfig.BitrateLimit = 8000;    // 8 Mbps
+        mainConfig.FrameRateLimit = 25;    // 25 fps (smooth)
+        mainConfig.Quality = 5;            // Maximum quality (1-5 scale)
+        mainConfig.H264Profile = "High";   // H.264 High Profile
+        mainConfig.GovLength = 50;         // GOP = 2 seconds at 25fps
+
+        var success = await SetVideoEncoderConfigurationAsync(mainConfig);
+
+        if (success)
+        {
+            Console.WriteLine("Camera encoder optimized for maximum quality:");
+            Console.WriteLine($"  Resolution: {mainConfig.Width}x{mainConfig.Height}");
+            Console.WriteLine($"  Bitrate: {mainConfig.BitrateLimit} kbps");
+            Console.WriteLine($"  Frame Rate: {mainConfig.FrameRateLimit} fps");
+            Console.WriteLine($"  Profile: {mainConfig.H264Profile}");
+        }
+
+        return success;
+    }
+
+    /// <summary>
     /// Set video encoder configuration (resolution, bitrate, framerate, etc.)
     /// </summary>
     public async Task<bool> SetVideoEncoderConfigurationAsync(VideoEncoderConfig config)

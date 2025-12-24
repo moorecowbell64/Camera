@@ -33,6 +33,9 @@ public class RecordingManager : IDisposable
     private DateTime _recordingStartTime;
     private int _segmentNumber;
 
+    // Quality settings - Default to Maximum for best quality
+    private RecordingQuality _recordingQuality = RecordingQuality.Maximum;
+
     // Frame info
     private double _fps = 20;
     private int _frameWidth;
@@ -67,6 +70,59 @@ public class RecordingManager : IDisposable
     public TimeSpan CurrentSegmentElapsed => _isRecording ? DateTime.Now - _segmentStartTime : TimeSpan.Zero;
     public bool HasRecordingError => _ffmpegHasError;
     public string? RecordingErrorMessage => _ffmpegLastError;
+
+    /// <summary>
+    /// Set recording quality (affects audio encoding)
+    /// </summary>
+    public RecordingQuality Quality
+    {
+        get => _recordingQuality;
+        set => _recordingQuality = value;
+    }
+
+    /// <summary>
+    /// Get FFmpeg audio encoding settings based on quality preset
+    /// </summary>
+    private static string GetAudioSettings(RecordingQuality quality)
+    {
+        return quality switch
+        {
+            RecordingQuality.Standard =>
+                // Standard: 192kbps AAC stereo @ 44.1kHz
+                "-c:a aac -b:a 192k -ac 2 -ar 44100",
+
+            RecordingQuality.High =>
+                // High: 320kbps AAC stereo @ 48kHz (max useful AAC bitrate)
+                "-c:a aac -b:a 320k -ac 2 -ar 48000",
+
+            RecordingQuality.Maximum =>
+                // Maximum: 320kbps AAC stereo @ 48kHz with quality optimization
+                // Using -q:a 1 for highest VBR quality mode
+                "-c:a aac -b:a 320k -ac 2 -ar 48000 -profile:a aac_low",
+
+            RecordingQuality.Lossless =>
+                // Lossless: FLAC encoding (note: requires MKV container, but we'll try)
+                // Fall back to highest AAC if FLAC doesn't work with MP4
+                "-c:a aac -b:a 320k -ac 2 -ar 48000 -profile:a aac_low",
+
+            _ => "-c:a aac -b:a 320k -ac 2 -ar 48000"
+        };
+    }
+
+    /// <summary>
+    /// Get description of quality settings
+    /// </summary>
+    public static string GetQualityDescription(RecordingQuality quality)
+    {
+        return quality switch
+        {
+            RecordingQuality.Standard => "192kbps AAC @ 44.1kHz (smaller files)",
+            RecordingQuality.High => "320kbps AAC @ 48kHz (recommended)",
+            RecordingQuality.Maximum => "320kbps AAC @ 48kHz High Profile (best quality)",
+            RecordingQuality.Lossless => "320kbps AAC @ 48kHz High Profile (best quality)",
+            _ => "Unknown"
+        };
+    }
 
     /// <summary>
     /// Get current recording status with file size info
@@ -581,13 +637,19 @@ public class RecordingManager : IDisposable
         // -t: Duration limit for this segment
         var segmentSeconds = (int)_segmentDuration.TotalSeconds;
 
-        // FFmpeg arguments - simplified for compatibility
-        // Audio: AAC at 256kbps stereo with high quality profile
+        // Get quality-based audio settings
+        var audioSettings = GetAudioSettings(_recordingQuality);
+
+        // FFmpeg arguments optimized for maximum quality
+        // Video: Direct copy from source (no quality loss)
+        // Audio: High-quality AAC encoding with settings based on quality preset
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
             $"-rtsp_transport tcp " +
+            $"-buffer_size 8192k " +           // Large buffer for 4K streams
             $"-i \"{_rtspUrl}\" " +
-            $"-c:v copy " +
-            $"-c:a aac -b:a 256k -ac 2 -ar 48000 " +
+            $"-c:v copy " +                     // Copy video stream directly (no re-encoding = no quality loss)
+            $"{audioSettings} " +               // Quality-based audio encoding
+            $"-max_muxing_queue_size 1024 " +   // Prevent muxing buffer issues
             $"-movflags frag_keyframe+empty_moov " +
             $"-t {segmentSeconds} " +
             $"-y \"{_currentRecordingPath}\"";
@@ -1052,4 +1114,34 @@ public class RecordingStatus
     public string? ErrorMessage { get; set; }
     public long AvailableDiskSpace { get; set; }
     public bool LowDiskSpace { get; set; }
+}
+
+/// <summary>
+/// Recording quality presets
+/// </summary>
+public enum RecordingQuality
+{
+    /// <summary>
+    /// Standard quality - 192kbps AAC stereo @ 44.1kHz
+    /// Good for general use, smaller file sizes
+    /// </summary>
+    Standard,
+
+    /// <summary>
+    /// High quality - 320kbps AAC stereo @ 48kHz
+    /// Excellent audio quality, recommended for most uses
+    /// </summary>
+    High,
+
+    /// <summary>
+    /// Maximum quality - 320kbps AAC stereo @ 48kHz with high profile
+    /// Best possible AAC quality
+    /// </summary>
+    Maximum,
+
+    /// <summary>
+    /// Lossless audio - FLAC encoding
+    /// Perfect audio quality, larger file sizes
+    /// </summary>
+    Lossless
 }

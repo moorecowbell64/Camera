@@ -376,6 +376,23 @@
                                             Width="45" Margin="5,0,0,0"
                                             ToolTip="Open recording folder in Explorer"/>
                                 </Grid>
+
+                                <!-- Quality Selection -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Quality:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="RecordingQualityCombo" Grid.Column="1"
+                                              SelectionChanged="RecordingQualityCombo_SelectionChanged"
+                                              SelectedIndex="2">
+                                        <ComboBoxItem Content="Standard (192kbps)" Tag="Standard"/>
+                                        <ComboBoxItem Content="High (320kbps)" Tag="High"/>
+                                        <ComboBoxItem Content="Maximum (320kbps HQ)" Tag="Maximum"/>
+                                    </ComboBox>
+                                </Grid>
+
                                 <Button x:Name="RecordButton"
                                         Content="Start Recording"
                                         Click="RecordButton_Click"
@@ -563,7 +580,13 @@
                                         Margin="0,10,0,5"/>
                                 <Button Content="Apply Encoder Settings"
                                         Click="ApplyEncoderSettings_Click"
+                                        Margin="0,0,0,5"
                                         Background="{StaticResource AccentOrangeBrush}"/>
+                                <Button Content="⚡ Optimize for Max Quality"
+                                        Click="OptimizeMaxQuality_Click"
+                                        Background="{StaticResource AccentGreenBrush}"
+                                        Foreground="White"
+                                        ToolTip="Set camera to 4K, 8Mbps, 25fps, High Profile"/>
                             </StackPanel>
                         </GroupBox>
 
