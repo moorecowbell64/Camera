@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
 
@@ -20,10 +21,116 @@ public partial class MainWindow : System.Windows.Window
     private float _ptzSpeed = 1.0f;
     private VideoEncoderConfig? _currentEncoderConfig;
 
+    // App settings (persisted)
+    private AppSettings _settings = new();
+    private bool _isInitializing = true;
+
+    // PTZ movement tracking
+    private bool _isPtzActive;
+
+    // Click-to-center tracking
+    private DateTime _lastClickTime = DateTime.MinValue;
+    private bool _isClickZooming;
+    private double _clickTravelMultiplier = 1700; // ms per unit distance
+
+    // Calibration mode
+    private bool _isCalibrating;
+    private int _calibrationStep;
+    private int _calibrationPhase; // 0=click target, 1=click result
+    private List<CalibrationSample> _calibrationSamples = new();
+    private CalibrationTarget? _currentTarget;
+
+    // Comprehensive calibration targets - multiple distances and directions
+    private readonly CalibrationTarget[] _calibrationTargets = GenerateCalibrationTargets();
+
+    private static CalibrationTarget[] GenerateCalibrationTargets()
+    {
+        var targets = new List<CalibrationTarget>();
+
+        // Test 3 distances: near (0.3), mid (0.55), far (0.8)
+        var distances = new[] { 0.3, 0.55, 0.8 };
+        var distanceNames = new[] { "Near", "Mid", "Far" };
+
+        // 8 directions
+        var directions = new (double x, double y, string name)[]
+        {
+            (1, 0, "Right"),
+            (-1, 0, "Left"),
+            (0, 1, "Up"),
+            (0, -1, "Down"),
+            (0.707, 0.707, "UpRight"),
+            (-0.707, 0.707, "UpLeft"),
+            (0.707, -0.707, "DownRight"),
+            (-0.707, -0.707, "DownLeft"),
+        };
+
+        // Generate targets for each distance ring, but only select a subset for reasonable calibration time
+        // Far ring: all 8 directions
+        foreach (var dir in directions)
+        {
+            targets.Add(new CalibrationTarget(
+                dir.x * 0.8, dir.y * 0.8,
+                $"Far-{dir.name}", 0.8, dir.name));
+        }
+
+        // Mid ring: 4 cardinal directions
+        foreach (var dir in directions.Take(4))
+        {
+            targets.Add(new CalibrationTarget(
+                dir.x * 0.55, dir.y * 0.55,
+                $"Mid-{dir.name}", 0.55, dir.name));
+        }
+
+        // Near ring: 4 cardinal directions
+        foreach (var dir in directions.Take(4))
+        {
+            targets.Add(new CalibrationTarget(
+                dir.x * 0.3, dir.y * 0.3,
+                $"Near-{dir.name}", 0.3, dir.name));
+        }
+
+        return targets.ToArray();
+    }
+
+    private class CalibrationTarget
+    {
+        public double X { get; }
+        public double Y { get; }
+        public string Name { get; }
+        public double Distance { get; }
+        public string Direction { get; }
+
+        public CalibrationTarget(double x, double y, string name, double distance, string direction)
+        {
+            X = x; Y = y; Name = name; Distance = distance; Direction = direction;
+        }
+    }
+
+    private class CalibrationSample
+    {
+        public CalibrationTarget Target { get; set; } = null!;
+        public double ErrorX { get; set; }
+        public double ErrorY { get; set; }
+        public double ErrorDistance { get; set; }
+        public double SuggestedMultiplier { get; set; }
+        public bool IsUndershoot { get; set; }
+    }
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Load saved settings
+        _settings = AppSettings.Load();
+
+        // Apply saved settings to UI
+        CameraIpText.Text = _settings.CameraIp;
+        UsernameText.Text = _settings.Username;
         PasswordText.Password = "hydroLob99";
+        RecordingFolderText.Text = _settings.RecordingFolder;
+        _clickTravelMultiplier = _settings.ClickTravelMultiplier;
+        TravelSlider.Value = _clickTravelMultiplier;
+        TravelValueLabel.Text = $"{_clickTravelMultiplier:F0}";
 
         // Set default selections
         StreamQualityCombo.SelectedIndex = 0; // Main 4K
@@ -33,8 +140,18 @@ public partial class MainWindow : System.Windows.Window
         ProfileCombo.SelectedIndex = 0; // High
         OsdPositionCombo.SelectedIndex = 0; // Upper Left
 
+        // Done initializing
+        _isInitializing = false;
+
         // Auto-connect when window loads
         Loaded += MainWindow_Loaded;
+        Closing += MainWindow_Closing;
+    }
+
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Save settings on close
+        _settings.Save();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -80,7 +197,18 @@ public partial class MainWindow : System.Windows.Window
             _ptz = new PTZController(_client);
             _recording = new RecordingManager(_client, StreamQuality.Main);
             _recording.FrameCaptured += OnFrameCaptured;
+            _recording.SegmentCreated += OnSegmentCreated;
+            _recording.StatusChanged += OnRecordingStatusChanged;
+
+            // Apply saved recording folder from settings
+            _recording.RecordingFolder = _settings.RecordingFolder;
+            RecordingFolderText.Text = _settings.RecordingFolder;
+
             _deviceManager = new DeviceManager(ip, username, password, 80);
+
+            // Warm up ONVIF connection for faster PTZ response
+            UpdateConnectionStatus("Warming up PTZ...", Brushes.Orange);
+            await _client.Onvif.WarmUpConnectionAsync();
 
             // Auto-detect best RTSP URL for highest resolution
             UpdateConnectionStatus("Detecting streams...", Brushes.Orange);
@@ -144,9 +272,14 @@ public partial class MainWindow : System.Windows.Window
             _audioManager = null;
             _isAudioEnabled = false;
 
+            // Stop recording timer
+            StopRecordingTimer();
+
             if (_recording != null)
             {
                 _recording.FrameCaptured -= OnFrameCaptured;
+                _recording.SegmentCreated -= OnSegmentCreated;
+                _recording.StatusChanged -= OnRecordingStatusChanged;
                 _recording.StopRecording();
                 _recording.StopStreaming();
                 _recording.Dispose();
@@ -177,6 +310,8 @@ public partial class MainWindow : System.Windows.Window
             PresetsGroup.IsEnabled = false;
             RecordingGroup.IsEnabled = false;
             RecordButton.Content = "Start Recording";
+            RecordButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
+            RecordingSegmentInfo.Text = "30min segments, 10s overlap";
             AudioGroup.IsEnabled = false;
             AudioButton.Content = "Enable Audio";
             AudioStatusText.Text = "Audio: Disabled";
@@ -264,65 +399,726 @@ public partial class MainWindow : System.Windows.Window
     }
 
     // PTZ Button Handlers - Single command on press, stop on release
-    // ONVIF ContinuousMove keeps moving until Stop is called - no timer needed
-    private async void StartPtzMovement(Func<Task> action, UIElement sender)
-    {
-        if (_ptz == null) return;
-
-        // Capture mouse to ensure we get MouseUp even if cursor leaves button
-        sender.CaptureMouse();
-
-        // Send single move command - camera continues until Stop
-        await action();
-    }
-
-    private async void StopPtzMovement(UIElement sender)
-    {
-        sender.ReleaseMouseCapture();
-
-        if (_ptz != null)
-            await _ptz.StopMoveAsync();
-    }
+    // ONVIF ContinuousMove keeps moving until Stop is called
+    // Using synchronous fire-and-forget for maximum responsiveness
 
     private void UpButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.TiltUpAsync(_ptzSpeed), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(0, _ptzSpeed, 0);
     }
 
     private void DownButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.TiltDownAsync(_ptzSpeed), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(0, -_ptzSpeed, 0);
     }
 
     private void LeftButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.PanLeftAsync(_ptzSpeed), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(-_ptzSpeed, 0, 0);
     }
 
     private void RightButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.PanRightAsync(_ptzSpeed), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(_ptzSpeed, 0, 0);
     }
 
     private void ZoomInButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.ZoomInAsync(0.3f), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(0, 0, 0.5f);
     }
 
     private void ZoomOutButton_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        StartPtzMovement(() => _ptz!.ZoomOutAsync(0.3f), (UIElement)sender);
+        if (_client == null || _isPtzActive) return;
+        _isPtzActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.ContinuousMoveFast(0, 0, -0.5f);
     }
 
     private void PTZButton_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        StopPtzMovement((UIElement)sender);
+        if (!_isPtzActive) return;
+        _isPtzActive = false;
+        ((UIElement)sender).ReleaseMouseCapture();
+        _client?.Onvif.StopFast();
     }
 
-    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    private void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_ptz != null)
-            await _ptz.StopMoveAsync();
+        _isPtzActive = false;
+        _isClickZooming = false;
+        _isFocusActive = false;
+        _client?.Onvif.StopFast();
+        _client?.Onvif.FocusStopFast();
+    }
+
+    // ===== Focus Controls =====
+    private bool _isFocusActive;
+
+    private void FocusNearButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_client == null || _isFocusActive) return;
+        _isFocusActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.FocusNearFast();
+    }
+
+    private void FocusFarButton_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_client == null || _isFocusActive) return;
+        _isFocusActive = true;
+        ((UIElement)sender).CaptureMouse();
+        _client.Onvif.FocusFarFast();
+    }
+
+    private void FocusButton_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_isFocusActive) return;
+        _isFocusActive = false;
+        ((UIElement)sender).ReleaseMouseCapture();
+        _client?.Onvif.FocusStopFast();
+    }
+
+    private void AutoFocusButton_Click(object sender, RoutedEventArgs e)
+    {
+        _client?.Onvif.AutoFocusFast();
+    }
+
+    // Click-to-center: Click on video to pan/tilt camera to center on that point
+    // Double-click and hold: Move to point and zoom in while held
+    private void VideoImage_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_client == null || !_isConnected) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+
+        var image = (Image)sender;
+        var clickPoint = e.GetPosition(image);
+
+        // Calculate normalized offset from center (-1 to 1)
+        var centerX = image.ActualWidth / 2;
+        var centerY = image.ActualHeight / 2;
+
+        // Normalize: -1 (left/top) to +1 (right/bottom)
+        var normalizedX = (clickPoint.X - centerX) / centerX;
+        var normalizedY = (centerY - clickPoint.Y) / centerY; // Invert Y (up is positive)
+
+        // Clamp to valid range
+        normalizedX = Math.Clamp(normalizedX, -1.0, 1.0);
+        normalizedY = Math.Clamp(normalizedY, -1.0, 1.0);
+
+        // Check for double-click (within 300ms)
+        var now = DateTime.Now;
+        var isDoubleClick = (now - _lastClickTime).TotalMilliseconds < 300;
+        _lastClickTime = now;
+
+        if (isDoubleClick)
+        {
+            // Double-click and hold: move to point AND zoom in
+            _isClickZooming = true;
+            image.CaptureMouse();
+
+            // Move toward clicked point at max speed while zooming in
+            var panDirection = normalizedX > 0 ? 1.0f : (normalizedX < 0 ? -1.0f : 0f);
+            var tiltDirection = normalizedY > 0 ? 1.0f : (normalizedY < 0 ? -1.0f : 0f);
+            _client.Onvif.ContinuousMoveFast(panDirection, tiltDirection, 0.5f);
+        }
+        else
+        {
+            // Single click: move at max speed for duration proportional to distance from center
+            // Then stop - this should approximately center the clicked point
+            _ = MoveToClickedPointAsync(normalizedX, normalizedY);
+        }
+    }
+
+    private async Task MoveToClickedPointAsync(double normalizedX, double normalizedY)
+    {
+        if (_client == null) return;
+
+        // Calculate distance from center (0 to 1.414 for corners)
+        var distance = Math.Sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+
+        // Skip if click is very close to center
+        if (distance < 0.05) return;
+
+        // Calculate total movement duration based on distance
+        var totalDurationMs = (int)(distance * _clickTravelMultiplier);
+
+        // Calculate base direction
+        var basePanDir = normalizedX > 0 ? 1.0f : -1.0f;
+        var baseTiltDir = normalizedY > 0 ? 1.0f : -1.0f;
+
+        // Scale direction by component magnitude (so diagonal moves are balanced)
+        var absX = Math.Abs(normalizedX);
+        var absY = Math.Abs(normalizedY);
+        if (absX > 0.01) basePanDir *= (float)(absX / Math.Max(absX, absY));
+        if (absY > 0.01) baseTiltDir *= (float)(absY / Math.Max(absX, absY));
+
+        // If one axis is very small, zero it out
+        if (Math.Abs(normalizedX) < 0.05) basePanDir = 0;
+        if (Math.Abs(normalizedY) < 0.05) baseTiltDir = 0;
+
+        // Deceleration curve: fast start, slow finish for accuracy
+        // Phase 1: 50% of duration at 100% speed
+        // Phase 2: 30% of duration at 50% speed
+        // Phase 3: 20% of duration at 20% speed
+        var phases = new (float speedMultiplier, double durationPercent)[]
+        {
+            (1.0f, 0.50),   // Full speed for first 50%
+            (0.5f, 0.30),   // Half speed for next 30%
+            (0.2f, 0.20),   // Slow creep for final 20%
+        };
+
+        foreach (var (speedMult, durationPct) in phases)
+        {
+            var phaseDuration = (int)(totalDurationMs * durationPct);
+            if (phaseDuration < 20) continue; // Skip very short phases
+
+            var panSpeed = basePanDir * speedMult;
+            var tiltSpeed = baseTiltDir * speedMult;
+
+            _client.Onvif.ContinuousMoveFast(panSpeed, tiltSpeed, 0);
+            await Task.Delay(phaseDuration);
+        }
+
+        // Stop movement
+        _client.Onvif.StopFast();
+    }
+
+    private void VideoImage_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_isClickZooming)
+        {
+            _isClickZooming = false;
+            ((Image)sender).ReleaseMouseCapture();
+            _client?.Onvif.StopFast();
+        }
+    }
+
+    private void VideoImage_MouseLeave(object sender, MouseEventArgs e)
+    {
+        // Stop zoom if mouse leaves while double-click zooming
+        if (_isClickZooming)
+        {
+            _isClickZooming = false;
+            _client?.Onvif.StopFast();
+        }
+    }
+
+    private void TravelSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        _clickTravelMultiplier = e.NewValue;
+        if (TravelValueLabel != null)
+            TravelValueLabel.Text = $"{_clickTravelMultiplier:F0}";
+
+        // Save to settings (skip during initialization)
+        if (!_isInitializing)
+        {
+            _settings.ClickTravelMultiplier = _clickTravelMultiplier;
+            _settings.Save();
+        }
+    }
+
+    // ===== Calibration System =====
+
+    private void StartCalibration_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isConnected || _client == null)
+        {
+            MessageBox.Show("Please connect to camera first.", "Calibration", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _isCalibrating = true;
+        _calibrationStep = 0;
+        _calibrationPhase = 0;
+        _calibrationSamples.Clear();
+        _currentTarget = null;
+
+        // Show calibration overlay
+        CalibrationOverlay.Visibility = Visibility.Visible;
+        CalibrationInstructions.Text =
+            "CALIBRATION\n\n" +
+            "1. Click YELLOW target\n" +
+            "2. Camera moves\n" +
+            "3. Click where that spot\n" +
+            "   ended up in the video\n" +
+            "   (CENTER = perfect)\n\n" +
+            "ESC=cancel  SPACE=skip";
+
+        // Wait for layout to complete before drawing targets
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            UpdateCalibrationDisplay();
+        }));
+    }
+
+    private void UpdateCalibrationDisplay()
+    {
+        CalibrationCanvas.Children.Clear();
+
+        if (_calibrationStep >= _calibrationTargets.Length)
+        {
+            FinishCalibration();
+            return;
+        }
+
+        _currentTarget = _calibrationTargets[_calibrationStep];
+        var canvas = CalibrationCanvas;
+        var centerX = canvas.ActualWidth / 2;
+        var centerY = canvas.ActualHeight / 2;
+
+        // Safety check - if canvas not yet laid out, defer
+        if (centerX < 10 || centerY < 10)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                UpdateCalibrationDisplay();
+            }));
+            return;
+        }
+
+        // Draw distance rings for reference
+        DrawDistanceRings(canvas, centerX, centerY);
+
+        // Draw all targets
+        for (int i = 0; i < _calibrationTargets.Length; i++)
+        {
+            var t = _calibrationTargets[i];
+            var isActive = i == _calibrationStep;
+            var isCompleted = i < _calibrationStep;
+            DrawCalibrationTarget(t.X, t.Y, t.Name, isActive, isCompleted, t.Distance);
+        }
+
+        // Draw center crosshair
+        DrawCenterCrosshair();
+
+        // Draw progress bar
+        DrawProgressBar(canvas);
+
+        // Update status text
+        var distanceLabel = _currentTarget.Distance switch
+        {
+            0.3 => "NEAR",
+            0.55 => "MID",
+            0.8 => "FAR",
+            _ => ""
+        };
+
+        if (_calibrationPhase == 0)
+        {
+            CalibrationStepText.Text = $"[{_calibrationStep + 1}/{_calibrationTargets.Length}] Click the YELLOW {distanceLabel} {_currentTarget.Direction} target";
+        }
+        else
+        {
+            CalibrationStepText.Text = $"Where did that spot end up in the video?\n(Click CENTER crosshair if it's perfectly centered)";
+        }
+    }
+
+    private void DrawDistanceRings(Canvas canvas, double centerX, double centerY)
+    {
+        var distances = new[] { 0.3, 0.55, 0.8 };
+        var colors = new[] { Brushes.DarkGreen, Brushes.DarkOrange, Brushes.DarkRed };
+        var labels = new[] { "Near", "Mid", "Far" };
+
+        for (int i = 0; i < distances.Length; i++)
+        {
+            var radius = distances[i] * Math.Min(centerX, centerY);
+            var ring = new System.Windows.Shapes.Ellipse
+            {
+                Width = radius * 2,
+                Height = radius * 2,
+                Stroke = colors[i],
+                StrokeThickness = 1,
+                StrokeDashArray = new DoubleCollection { 4, 4 },
+                Fill = Brushes.Transparent
+            };
+            Canvas.SetLeft(ring, centerX - radius);
+            Canvas.SetTop(ring, centerY - radius);
+            canvas.Children.Add(ring);
+
+            // Ring label
+            var label = new TextBlock
+            {
+                Text = labels[i],
+                Foreground = colors[i],
+                FontSize = 9
+            };
+            Canvas.SetLeft(label, centerX + radius + 5);
+            Canvas.SetTop(label, centerY - 6);
+            canvas.Children.Add(label);
+        }
+    }
+
+    private void DrawProgressBar(Canvas canvas)
+    {
+        var width = canvas.ActualWidth - 40;
+        var progress = (double)_calibrationStep / _calibrationTargets.Length;
+
+        // Background
+        var bg = new System.Windows.Shapes.Rectangle
+        {
+            Width = width,
+            Height = 8,
+            Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(60, 60, 60)),
+            RadiusX = 4,
+            RadiusY = 4
+        };
+        Canvas.SetLeft(bg, 20);
+        Canvas.SetTop(bg, 10);
+        canvas.Children.Add(bg);
+
+        // Progress
+        var fg = new System.Windows.Shapes.Rectangle
+        {
+            Width = Math.Max(0, width * progress),
+            Height = 8,
+            Fill = Brushes.LimeGreen,
+            RadiusX = 4,
+            RadiusY = 4
+        };
+        Canvas.SetLeft(fg, 20);
+        Canvas.SetTop(fg, 10);
+        canvas.Children.Add(fg);
+
+        // Percentage text
+        var pct = new TextBlock
+        {
+            Text = $"{progress * 100:F0}%",
+            Foreground = Brushes.White,
+            FontSize = 10
+        };
+        Canvas.SetLeft(pct, 20 + width + 10);
+        Canvas.SetTop(pct, 6);
+        canvas.Children.Add(pct);
+    }
+
+    private void DrawCalibrationTarget(double normX, double normY, string name, bool isActive, bool isCompleted, double distance)
+    {
+        var canvas = CalibrationCanvas;
+        var centerX = canvas.ActualWidth / 2;
+        var centerY = canvas.ActualHeight / 2;
+
+        var x = centerX + (normX * centerX);
+        var y = centerY - (normY * centerY);
+
+        var size = isActive ? 35.0 : (isCompleted ? 20.0 : 25.0);
+
+        // Color based on distance ring and state
+        Brush color;
+        if (isCompleted)
+            color = Brushes.Green;
+        else if (isActive)
+            color = Brushes.Yellow;
+        else
+        {
+            color = distance switch
+            {
+                0.3 => new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 100, 100)),
+                0.55 => new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80)),
+                _ => new SolidColorBrush(System.Windows.Media.Color.FromRgb(60, 60, 60))
+            };
+        }
+
+        // Target circle
+        var circle = new System.Windows.Shapes.Ellipse
+        {
+            Width = size,
+            Height = size,
+            Stroke = color,
+            StrokeThickness = isActive ? 3 : 2,
+            Fill = isActive ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(60, 255, 255, 0)) : Brushes.Transparent
+        };
+        Canvas.SetLeft(circle, x - size / 2);
+        Canvas.SetTop(circle, y - size / 2);
+        canvas.Children.Add(circle);
+
+        // Crosshair for active target
+        if (isActive)
+        {
+            var h = new System.Windows.Shapes.Line { X1 = x - size / 2 + 5, Y1 = y, X2 = x + size / 2 - 5, Y2 = y, Stroke = Brushes.Yellow, StrokeThickness = 1 };
+            var v = new System.Windows.Shapes.Line { X1 = x, Y1 = y - size / 2 + 5, X2 = x, Y2 = y + size / 2 - 5, Stroke = Brushes.Yellow, StrokeThickness = 1 };
+            canvas.Children.Add(h);
+            canvas.Children.Add(v);
+        }
+
+        // Center dot
+        var dot = new System.Windows.Shapes.Ellipse
+        {
+            Width = isActive ? 6 : 4,
+            Height = isActive ? 6 : 4,
+            Fill = color
+        };
+        Canvas.SetLeft(dot, x - (isActive ? 3 : 2));
+        Canvas.SetTop(dot, y - (isActive ? 3 : 2));
+        canvas.Children.Add(dot);
+
+        // Checkmark for completed
+        if (isCompleted)
+        {
+            var check = new TextBlock
+            {
+                Text = "✓",
+                Foreground = Brushes.Green,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(check, x - 5);
+            Canvas.SetTop(check, y - 8);
+            canvas.Children.Add(check);
+        }
+    }
+
+    private void DrawCenterCrosshair()
+    {
+        var canvas = CalibrationCanvas;
+        var centerX = canvas.ActualWidth / 2;
+        var centerY = canvas.ActualHeight / 2;
+
+        // Large crosshair
+        var hLine = new System.Windows.Shapes.Line
+        {
+            X1 = centerX - 40, Y1 = centerY,
+            X2 = centerX + 40, Y2 = centerY,
+            Stroke = Brushes.Cyan,
+            StrokeThickness = 2
+        };
+        canvas.Children.Add(hLine);
+
+        var vLine = new System.Windows.Shapes.Line
+        {
+            X1 = centerX, Y1 = centerY - 40,
+            X2 = centerX, Y2 = centerY + 40,
+            Stroke = Brushes.Cyan,
+            StrokeThickness = 2
+        };
+        canvas.Children.Add(vLine);
+
+        // Center circle
+        var centerCircle = new System.Windows.Shapes.Ellipse
+        {
+            Width = 20,
+            Height = 20,
+            Stroke = Brushes.Cyan,
+            StrokeThickness = 2,
+            Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 0, 255, 255))
+        };
+        Canvas.SetLeft(centerCircle, centerX - 10);
+        Canvas.SetTop(centerCircle, centerY - 10);
+        canvas.Children.Add(centerCircle);
+
+        var label = new TextBlock
+        {
+            Text = "CENTER\n(click if perfect)",
+            Foreground = Brushes.Cyan,
+            FontSize = 9,
+            TextAlignment = TextAlignment.Center
+        };
+        Canvas.SetLeft(label, centerX - 35);
+        Canvas.SetTop(label, centerY + 42);
+        canvas.Children.Add(label);
+    }
+
+    private async void CalibrationCanvas_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_isCalibrating || _client == null || _currentTarget == null) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+
+        var canvas = (Canvas)sender;
+        var clickPoint = e.GetPosition(canvas);
+        var centerX = canvas.ActualWidth / 2;
+        var centerY = canvas.ActualHeight / 2;
+
+        if (_calibrationPhase == 0)
+        {
+            // Phase 0: User should click the target to start movement
+            var targetCanvasX = centerX + (_currentTarget.X * centerX);
+            var targetCanvasY = centerY - (_currentTarget.Y * centerY);
+            var distToTarget = Math.Sqrt(Math.Pow(clickPoint.X - targetCanvasX, 2) + Math.Pow(clickPoint.Y - targetCanvasY, 2));
+
+            if (distToTarget < 50)
+            {
+                CalibrationStepText.Text = $"Moving camera to {_currentTarget.Name}...";
+
+                // Perform movement
+                await MoveToClickedPointAsync(_currentTarget.X, _currentTarget.Y);
+                await Task.Delay(300);
+
+                _calibrationPhase = 1;
+                UpdateCalibrationDisplay();
+            }
+        }
+        else
+        {
+            // Phase 1: User indicates where target ended up
+            var clickNormX = (clickPoint.X - centerX) / centerX;
+            var clickNormY = (centerY - clickPoint.Y) / centerY;
+
+            var errorDistance = Math.Sqrt(clickNormX * clickNormX + clickNormY * clickNormY);
+            var targetDistance = Math.Sqrt(_currentTarget.X * _currentTarget.X + _currentTarget.Y * _currentTarget.Y);
+
+            // Determine if undershoot or overshoot
+            var sameDirection = (clickNormX * _currentTarget.X >= 0) || (clickNormY * _currentTarget.Y >= 0);
+            var isUndershoot = sameDirection && errorDistance > 0.02;
+
+            double suggestedMultiplier;
+            if (errorDistance < 0.05)
+            {
+                suggestedMultiplier = _clickTravelMultiplier;
+            }
+            else if (isUndershoot)
+            {
+                var traveledDistance = targetDistance - errorDistance;
+                if (traveledDistance > 0.01)
+                    suggestedMultiplier = _clickTravelMultiplier * (targetDistance / traveledDistance);
+                else
+                    suggestedMultiplier = _clickTravelMultiplier * 2;
+            }
+            else
+            {
+                var traveledDistance = targetDistance + errorDistance;
+                suggestedMultiplier = _clickTravelMultiplier * (targetDistance / traveledDistance);
+            }
+
+            // Clamp to reasonable range
+            suggestedMultiplier = Math.Clamp(suggestedMultiplier, 500, 5000);
+
+            _calibrationSamples.Add(new CalibrationSample
+            {
+                Target = _currentTarget,
+                ErrorX = clickNormX,
+                ErrorY = clickNormY,
+                ErrorDistance = errorDistance,
+                SuggestedMultiplier = suggestedMultiplier,
+                IsUndershoot = isUndershoot
+            });
+
+            // Next target
+            _calibrationStep++;
+            _calibrationPhase = 0;
+            UpdateCalibrationDisplay();
+        }
+    }
+
+    private void FinishCalibration()
+    {
+        _isCalibrating = false;
+        CalibrationOverlay.Visibility = Visibility.Collapsed;
+
+        if (_calibrationSamples.Count == 0)
+        {
+            MessageBox.Show("No calibration data collected.", "Calibration", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Comprehensive analysis
+        var avgMultiplier = _calibrationSamples.Average(s => s.SuggestedMultiplier);
+        var stdDev = Math.Sqrt(_calibrationSamples.Average(s => Math.Pow(s.SuggestedMultiplier - avgMultiplier, 2)));
+
+        // Analyze by distance
+        var nearSamples = _calibrationSamples.Where(s => s.Target.Distance < 0.4).ToList();
+        var midSamples = _calibrationSamples.Where(s => s.Target.Distance >= 0.4 && s.Target.Distance < 0.7).ToList();
+        var farSamples = _calibrationSamples.Where(s => s.Target.Distance >= 0.7).ToList();
+
+        var nearAvg = nearSamples.Any() ? nearSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+        var midAvg = midSamples.Any() ? midSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+        var farAvg = farSamples.Any() ? farSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+
+        // Analyze by axis
+        var panSamples = _calibrationSamples.Where(s => Math.Abs(s.Target.X) > Math.Abs(s.Target.Y)).ToList();
+        var tiltSamples = _calibrationSamples.Where(s => Math.Abs(s.Target.Y) > Math.Abs(s.Target.X)).ToList();
+
+        var panAvg = panSamples.Any() ? panSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+        var tiltAvg = tiltSamples.Any() ? tiltSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+
+        // Count accuracy
+        var perfectCount = _calibrationSamples.Count(s => s.ErrorDistance < 0.05);
+        var undershootCount = _calibrationSamples.Count(s => s.IsUndershoot);
+        var overshootCount = _calibrationSamples.Count - perfectCount - undershootCount;
+
+        var avgError = _calibrationSamples.Average(s => s.ErrorDistance);
+
+        var report = $"CALIBRATION ANALYSIS\n" +
+            $"═══════════════════════════════\n\n" +
+            $"Samples: {_calibrationSamples.Count}\n" +
+            $"Perfect (< 5% error): {perfectCount}\n" +
+            $"Undershoot: {undershootCount}  |  Overshoot: {overshootCount}\n" +
+            $"Average error: {avgError * 100:F1}%\n\n" +
+            $"BY DISTANCE:\n" +
+            $"  Near (0.3):  {nearAvg:F0}\n" +
+            $"  Mid (0.55):  {midAvg:F0}\n" +
+            $"  Far (0.8):   {farAvg:F0}\n\n" +
+            $"BY AXIS:\n" +
+            $"  Pan (H):  {panAvg:F0}\n" +
+            $"  Tilt (V): {tiltAvg:F0}\n\n" +
+            $"RECOMMENDED:\n" +
+            $"  Overall: {avgMultiplier:F0} (±{stdDev:F0})\n" +
+            $"  Current: {_clickTravelMultiplier:F0}\n\n" +
+            $"Apply recommended value?";
+
+        var result = MessageBox.Show(report, "Calibration Results", MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            _clickTravelMultiplier = avgMultiplier;
+            TravelSlider.Value = Math.Clamp(avgMultiplier, TravelSlider.Minimum, TravelSlider.Maximum);
+            TravelValueLabel.Text = $"{avgMultiplier:F0}";
+
+            // Expand slider range if needed
+            if (avgMultiplier > TravelSlider.Maximum)
+            {
+                TravelSlider.Maximum = avgMultiplier + 500;
+                TravelSlider.Value = avgMultiplier;
+            }
+            else if (avgMultiplier < TravelSlider.Minimum)
+            {
+                TravelSlider.Minimum = avgMultiplier - 200;
+                TravelSlider.Value = avgMultiplier;
+            }
+        }
+    }
+
+    private void CancelCalibration()
+    {
+        _isCalibrating = false;
+        CalibrationOverlay.Visibility = Visibility.Collapsed;
+        CalibrationCanvas.Children.Clear();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+
+        if (_isCalibrating)
+        {
+            if (e.Key == Key.Escape)
+            {
+                CancelCalibration();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Space)
+            {
+                // Skip current target
+                _calibrationStep++;
+                _calibrationPhase = 0;
+                UpdateCalibrationDisplay();
+                e.Handled = true;
+            }
+        }
     }
 
     private async void GotoPresetButton_Click(object sender, RoutedEventArgs e)
@@ -347,39 +1143,181 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private void BrowseRecordingFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select Recording Folder",
+            InitialDirectory = _settings.RecordingFolder
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            var folder = dialog.FolderName;
+            RecordingFolderText.Text = folder;
+
+            // Save to settings
+            _settings.RecordingFolder = folder;
+            _settings.Save();
+
+            if (_recording != null)
+            {
+                _recording.RecordingFolder = folder;
+            }
+        }
+    }
+
     private void RecordButton_Click(object sender, RoutedEventArgs e)
     {
         if (_recording == null) return;
 
         if (!_isRecording)
         {
+            // Check if folder is selected
+            if (string.IsNullOrEmpty(_recording.RecordingFolder) ||
+                RecordingFolderText.Text == "(Click Browse)")
+            {
+                MessageBox.Show("Please select a recording folder first.",
+                    "Recording", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             if (_recording.StartRecording())
             {
                 _isRecording = true;
                 RecordButton.Content = "Stop Recording";
                 RecordButton.Background = (Brush)Application.Current.Resources["AccentRedBrush"];
                 UpdateRecordingStatus("Recording...", Brushes.Red);
+                StartRecordingTimer();
             }
             else
             {
-                MessageBox.Show("Failed to start recording.",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                var errorMsg = _recording.LastError ?? "Failed to start recording.";
+                MessageBox.Show(errorMsg, "Recording Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         else
         {
-            var filename = _recording.StopRecording();
-            _isRecording = false;
-            RecordButton.Content = "Start Recording";
-            RecordButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
-            UpdateRecordingStatus("Not Recording", Brushes.Gray);
+            StopRecordingTimer();
 
-            if (!string.IsNullOrEmpty(filename))
+            // Show stopping indicator with animation
+            RecordButton.IsEnabled = false;
+            StoppingIndicator.Visibility = Visibility.Visible;
+            StartStoppingAnimation();
+
+            // Stop recording in background so UI stays responsive
+            _ = Task.Run(() =>
             {
-                MessageBox.Show($"Recording saved:\n{filename}",
-                    "Recording Saved", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
+                var filename = _recording.StopRecording();
+
+                Dispatcher.Invoke(() =>
+                {
+                    // Hide stopping indicator
+                    StopStoppingAnimation();
+                    StoppingIndicator.Visibility = Visibility.Collapsed;
+
+                    _isRecording = false;
+                    RecordButton.Content = "Start Recording";
+                    RecordButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
+                    RecordButton.IsEnabled = true;
+                    UpdateRecordingStatus("Not Recording", Brushes.Gray);
+                    RecordingSegmentInfo.Text = "30min segments, 10s overlap";
+
+                    if (!string.IsNullOrEmpty(filename))
+                    {
+                        // Show saved filename below button for 3 seconds
+                        RecordingSavedText.Text = $"Saved: {System.IO.Path.GetFileName(filename)}";
+                        var clearTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                        clearTimer.Tick += (s, args) =>
+                        {
+                            clearTimer.Stop();
+                            RecordingSavedText.Text = "";
+                        };
+                        clearTimer.Start();
+                    }
+                });
+            });
         }
+    }
+
+    private DispatcherTimer? _stoppingAnimationTimer;
+    private int _stoppingDotCount;
+
+    private void StartStoppingAnimation()
+    {
+        _stoppingDotCount = 0;
+        _stoppingAnimationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _stoppingAnimationTimer.Tick += (s, e) =>
+        {
+            _stoppingDotCount = (_stoppingDotCount + 1) % 4;
+            StoppingDots.Text = new string('.', _stoppingDotCount + 1);
+        };
+        _stoppingAnimationTimer.Start();
+    }
+
+    private void StopStoppingAnimation()
+    {
+        _stoppingAnimationTimer?.Stop();
+        _stoppingAnimationTimer = null;
+    }
+
+    private DispatcherTimer? _recordingTimer;
+
+    private void StartRecordingTimer()
+    {
+        _recordingTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _recordingTimer.Tick += (s, e) => UpdateRecordingSegmentInfo();
+        _recordingTimer.Start();
+    }
+
+    private void StopRecordingTimer()
+    {
+        _recordingTimer?.Stop();
+        _recordingTimer = null;
+    }
+
+    private void UpdateRecordingSegmentInfo()
+    {
+        if (_recording == null || !_recording.IsRecording) return;
+
+        var elapsed = _recording.CurrentSegmentElapsed;
+        var remaining = _recording.SegmentDuration - elapsed;
+        var segment = _recording.CurrentSegmentNumber;
+
+        RecordingSegmentInfo.Text = $"Segment {segment} | {elapsed:mm\\:ss} / {_recording.SegmentDuration:mm\\:ss}";
+    }
+
+    private void OnSegmentCreated(object? sender, string segmentPath)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var filename = System.IO.Path.GetFileName(segmentPath);
+            UpdateRecordingStatus($"Saved: {filename}", Brushes.LimeGreen);
+
+            // Reset to "Recording..." after a brief delay
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                if (_isRecording)
+                    UpdateRecordingStatus("Recording...", Brushes.Red);
+            };
+            timer.Start();
+        });
+    }
+
+    private void OnRecordingStatusChanged(object? sender, RecordingStatus status)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (status.IsRecording)
+            {
+                RecordingSegmentInfo.Text = $"Segment {status.SegmentNumber} starting...";
+            }
+        });
     }
 
     private async void SnapshotButton_Click(object sender, RoutedEventArgs e)

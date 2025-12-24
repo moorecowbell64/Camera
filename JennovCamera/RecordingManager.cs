@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using System.Diagnostics;
 
 namespace JennovCamera;
 
@@ -8,22 +9,55 @@ public class RecordingManager : IDisposable
     private bool _isRecording;
     private bool _isStreaming;
     private VideoCapture? _videoCapture;
-    private VideoWriter? _videoWriter;
     private Thread? _captureThread;
     private CancellationTokenSource? _cancellationTokenSource;
-    private string? _currentRecordingPath;
     private string _rtspUrl;
     private StreamQuality _currentQuality = StreamQuality.Main;
+
+    // FFmpeg recording
+    private Process? _ffmpegProcess;
+    private Thread? _ffmpegMonitorThread;
+    private string? _currentRecordingPath;
+
+    // Segmented recording settings
+    private string _recordingFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+    private TimeSpan _segmentDuration = TimeSpan.FromMinutes(30);
+    private TimeSpan _overlapDuration = TimeSpan.FromSeconds(10);
+    private DateTime _segmentStartTime;
+    private DateTime _recordingStartTime;
+    private int _segmentNumber;
+
+    // Frame info
+    private double _fps = 20;
+    private int _frameWidth;
+    private int _frameHeight;
+
+    // Events
+    public event EventHandler<Mat>? FrameCaptured;
+    public event EventHandler<string>? SegmentCreated;
+    public event EventHandler<RecordingStatus>? StatusChanged;
 
     public bool IsRecording => _isRecording;
     public bool IsStreaming => _isStreaming;
     public StreamQuality CurrentQuality => _currentQuality;
     public string CurrentRtspUrl => _rtspUrl;
-
-    /// <summary>
-    /// Event raised when a new frame is captured from the RTSP stream
-    /// </summary>
-    public event EventHandler<Mat>? FrameCaptured;
+    public string RecordingFolder
+    {
+        get => _recordingFolder;
+        set => _recordingFolder = value;
+    }
+    public TimeSpan SegmentDuration
+    {
+        get => _segmentDuration;
+        set => _segmentDuration = value;
+    }
+    public TimeSpan OverlapDuration
+    {
+        get => _overlapDuration;
+        set => _overlapDuration = value;
+    }
+    public int CurrentSegmentNumber => _segmentNumber;
+    public TimeSpan CurrentSegmentElapsed => _isRecording ? DateTime.Now - _segmentStartTime : TimeSpan.Zero;
 
     public RecordingManager(CameraClient client, StreamQuality quality = StreamQuality.Main)
     {
@@ -35,7 +69,6 @@ public class RecordingManager : IDisposable
 
     /// <summary>
     /// Try to find the best RTSP URL by testing multiple patterns
-    /// Returns the URL that gives the highest resolution
     /// </summary>
     public string? AutoDetectBestRtspUrl()
     {
@@ -47,7 +80,7 @@ public class RecordingManager : IDisposable
 
         foreach (var url in urls)
         {
-            Console.WriteLine($"  Trying: {url.Replace(_client.Onvif.GetRtspUrl().Split('@')[0].Split("//")[1], "***:***")}");
+            Console.WriteLine($"  Trying: {MaskCredentials(url)}");
 
             try
             {
@@ -57,7 +90,6 @@ public class RecordingManager : IDisposable
                 using var capture = new VideoCapture(url, VideoCaptureAPIs.FFMPEG);
                 if (capture.IsOpened())
                 {
-                    // Try to read a frame to get actual resolution
                     using var frame = new Mat();
                     if (capture.Read(frame) && !frame.Empty())
                     {
@@ -72,7 +104,6 @@ public class RecordingManager : IDisposable
                     }
                     else
                     {
-                        // Couldn't read frame, but capture opened - use reported dimensions
                         var w = (int)capture.Get(VideoCaptureProperties.FrameWidth);
                         var h = (int)capture.Get(VideoCaptureProperties.FrameHeight);
                         if (w > 0 && h > 0)
@@ -100,16 +131,27 @@ public class RecordingManager : IDisposable
 
         if (bestUrl != null)
         {
-            Console.WriteLine($"Best URL found: {bestUrl.Replace(_client.Onvif.GetRtspUrl().Split('@')[0].Split("//")[1], "***:***")} ({bestResolution} pixels)");
+            Console.WriteLine($"Best URL found: {MaskCredentials(bestUrl)} ({bestResolution} pixels)");
             _rtspUrl = bestUrl;
         }
 
         return bestUrl;
     }
 
-    /// <summary>
-    /// Set stream quality (Main = 4K, Sub = 480p)
-    /// </summary>
+    private string MaskCredentials(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            if (!string.IsNullOrEmpty(uri.UserInfo))
+            {
+                return url.Replace(uri.UserInfo, "***:***");
+            }
+        }
+        catch { }
+        return url;
+    }
+
     public void SetStreamQuality(StreamQuality quality)
     {
         if (_isStreaming)
@@ -122,25 +164,16 @@ public class RecordingManager : IDisposable
         Console.WriteLine($"Stream quality set to: {quality} ({(_currentQuality == StreamQuality.Main ? "4K" : "SD")})");
     }
 
-    /// <summary>
-    /// Get information about available streams
-    /// </summary>
     public (StreamInfo main, StreamInfo sub) GetAvailableStreams()
     {
         return (_client.Onvif.GetMainStreamInfo(), _client.Onvif.GetSubStreamInfo());
     }
 
-    /// <summary>
-    /// Set a custom RTSP URL (if different from default)
-    /// </summary>
     public void SetRtspUrl(string url)
     {
         _rtspUrl = url;
     }
 
-    /// <summary>
-    /// Take a snapshot using ONVIF protocol
-    /// </summary>
     public async Task<bool> TakeSnapshotAsync(string? filePath = null)
     {
         try
@@ -152,14 +185,12 @@ public class RecordingManager : IDisposable
                 return false;
             }
 
-            // Generate filename if not provided
             if (string.IsNullOrEmpty(filePath))
             {
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                filePath = $"snapshot_{timestamp}.jpg";
+                filePath = Path.Combine(_recordingFolder, $"snapshot_{timestamp}.jpg");
             }
 
-            // Save the image
             await File.WriteAllBytesAsync(filePath, imageData);
             Console.WriteLine($"Snapshot saved: {filePath}");
             return true;
@@ -171,9 +202,6 @@ public class RecordingManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Start video streaming from RTSP (without recording)
-    /// </summary>
     public bool StartStreaming()
     {
         if (_isStreaming)
@@ -184,9 +212,6 @@ public class RecordingManager : IDisposable
 
         try
         {
-            // Set FFMPEG options via environment for 4K RTSP streaming
-            // Use TCP transport for reliability, large buffer for 4K bandwidth
-            // Disable probing limits to get full resolution
             Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
                 "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
 
@@ -198,10 +223,8 @@ public class RecordingManager : IDisposable
                 return false;
             }
 
-            // Configure capture settings for 4K
             _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
 
-            // For 4K stream, set resolution hints
             if (_currentQuality == StreamQuality.Main)
             {
                 _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
@@ -209,18 +232,19 @@ public class RecordingManager : IDisposable
                 _videoCapture.Set(VideoCaptureProperties.Fps, 20);
             }
 
-            // Log actual capture resolution
-            var actualWidth = _videoCapture.Get(VideoCaptureProperties.FrameWidth);
-            var actualHeight = _videoCapture.Get(VideoCaptureProperties.FrameHeight);
-            var actualFps = _videoCapture.Get(VideoCaptureProperties.Fps);
-            Console.WriteLine($"Capture initialized: requested={(_currentQuality == StreamQuality.Main ? "3840x2160" : "720x480")}, actual={actualWidth}x{actualHeight} @ {actualFps}fps");
+            _frameWidth = (int)_videoCapture.Get(VideoCaptureProperties.FrameWidth);
+            _frameHeight = (int)_videoCapture.Get(VideoCaptureProperties.FrameHeight);
+            _fps = _videoCapture.Get(VideoCaptureProperties.Fps);
+            if (_fps <= 0) _fps = 20;
+
+            Console.WriteLine($"Capture initialized: actual={_frameWidth}x{_frameHeight} @ {_fps}fps");
 
             _isStreaming = true;
             _cancellationTokenSource = new CancellationTokenSource();
             _captureThread = new Thread(() => CaptureLoop(_cancellationTokenSource.Token));
             _captureThread.Start();
 
-            Console.WriteLine($"Started streaming: {_rtspUrl}");
+            Console.WriteLine($"Started streaming: {MaskCredentials(_rtspUrl)}");
             return true;
         }
         catch (Exception ex)
@@ -230,9 +254,6 @@ public class RecordingManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Stop video streaming
-    /// </summary>
     public void StopStreaming()
     {
         if (!_isStreaming)
@@ -249,74 +270,287 @@ public class RecordingManager : IDisposable
         Console.WriteLine("Stopped streaming");
     }
 
-    /// <summary>
-    /// Start recording video to file (requires streaming to be active)
-    /// </summary>
-    public bool StartRecording(string? filePath = null)
+    // Known FFmpeg installation paths to check
+    private static readonly string[] FFmpegPaths = new[]
     {
+        "ffmpeg", // In PATH
+        @"C:\ffmpeg\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe",
+        @"C:\ffmpeg\bin\ffmpeg.exe",
+        @"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        @"C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe",
+    };
+
+    private static string? _ffmpegPath;
+
+    /// <summary>
+    /// Find FFmpeg executable path
+    /// </summary>
+    public static string? FindFFmpegPath()
+    {
+        if (_ffmpegPath != null)
+            return _ffmpegPath;
+
+        foreach (var path in FFmpegPaths)
+        {
+            try
+            {
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = path,
+                        Arguments = "-version",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                process.Start();
+                process.WaitForExit(3000);
+                if (process.ExitCode == 0)
+                {
+                    _ffmpegPath = path;
+                    Console.WriteLine($"Found FFmpeg at: {path}");
+                    return _ffmpegPath;
+                }
+            }
+            catch
+            {
+                // Try next path
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Check if FFmpeg is available
+    /// </summary>
+    public static bool IsFFmpegAvailable()
+    {
+        return FindFFmpegPath() != null;
+    }
+
+    /// <summary>
+    /// Get the last error message for UI display
+    /// </summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>
+    /// Start recording with FFmpeg (includes audio)
+    /// </summary>
+    public bool StartRecording(string? baseName = null)
+    {
+        LastError = null;
+
         if (_isRecording)
         {
-            Console.WriteLine("Already recording");
+            LastError = "Already recording";
+            Console.WriteLine(LastError);
             return false;
         }
 
-        // Auto-start streaming if not already active
+        // Check if FFmpeg is available
+        if (!IsFFmpegAvailable())
+        {
+            LastError = "FFmpeg is not installed or not in PATH.\n\nInstall with: winget install ffmpeg\n\nOr download from: https://ffmpeg.org/download.html";
+            Console.WriteLine(LastError);
+            return false;
+        }
+
         if (!_isStreaming)
         {
             if (!StartStreaming())
             {
-                Console.WriteLine("Cannot start recording without active stream");
+                LastError = "Cannot start recording without active stream";
+                Console.WriteLine(LastError);
                 return false;
             }
         }
 
         try
         {
-            // Generate filename if not provided
-            if (string.IsNullOrEmpty(filePath))
+            if (!Directory.Exists(_recordingFolder))
             {
-                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                filePath = $"recording_{timestamp}.mp4";
+                Directory.CreateDirectory(_recordingFolder);
             }
 
-            _currentRecordingPath = filePath;
+            _segmentNumber = 1;
+            _recordingStartTime = DateTime.Now;
 
-            // Get video properties from capture
-            var width = (int)_videoCapture!.Get(VideoCaptureProperties.FrameWidth);
-            var height = (int)_videoCapture.Get(VideoCaptureProperties.FrameHeight);
-            var fps = _videoCapture.Get(VideoCaptureProperties.Fps);
-
-            // Default to 1080p @ 20fps if not detected
-            if (width <= 0) width = 1920;
-            if (height <= 0) height = 1080;
-            if (fps <= 0) fps = 20;
-
-            // Create video writer with MP4V codec
-            var fourcc = VideoWriter.FourCC('m', 'p', '4', 'v');
-            _videoWriter = new VideoWriter(filePath, fourcc, fps, new OpenCvSharp.Size(width, height));
-
-            if (!_videoWriter.IsOpened())
+            if (!StartNewFFmpegSegment())
             {
-                Console.WriteLine("Failed to create video writer");
-                _videoWriter.Dispose();
-                _videoWriter = null;
+                LastError ??= "Failed to start FFmpeg process";
                 return false;
             }
 
             _isRecording = true;
-            Console.WriteLine($"Started recording: {filePath} ({width}x{height} @ {fps}fps)");
+            Console.WriteLine($"Started recording with audio: {_segmentDuration.TotalMinutes}min segments");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to start recording: {ex.Message}");
+            LastError = $"Failed to start recording: {ex.Message}";
+            Console.WriteLine(LastError);
             return false;
         }
     }
 
-    /// <summary>
-    /// Stop recording video
-    /// </summary>
+    private bool StartNewFFmpegSegment()
+    {
+        // Stop previous segment if running
+        StopFFmpegSegment();
+
+        var ffmpegPath = FindFFmpegPath();
+        if (ffmpegPath == null)
+        {
+            LastError = "FFmpeg not found";
+            return false;
+        }
+
+        var timestamp = DateTime.Now;
+        var segmentName = $"recording_{timestamp:yyyy-MM-dd}_{timestamp:HH-mm-ss}.mp4";
+        _currentRecordingPath = Path.Combine(_recordingFolder, segmentName);
+        _segmentStartTime = timestamp;
+
+        // Build FFmpeg command
+        // -rtsp_transport tcp: Use TCP for reliable streaming
+        // -i: Input RTSP URL
+        // -c:v copy: Copy video without re-encoding (fast, preserves quality)
+        // -c:a aac: Re-encode audio to AAC (pcm_alaw from camera isn't supported in MP4)
+        // -movflags frag_keyframe+empty_moov: Fragmented MP4, playable even if interrupted
+        // -t: Duration limit for this segment
+        var segmentSeconds = (int)_segmentDuration.TotalSeconds;
+
+        var ffmpegArgs = $"-rtsp_transport tcp -i \"{_rtspUrl}\" -c:v copy -c:a aac -movflags frag_keyframe+empty_moov -t {segmentSeconds} -y \"{_currentRecordingPath}\"";
+
+        Console.WriteLine($"Starting FFmpeg segment {_segmentNumber}: {segmentName}");
+        Console.WriteLine($"FFmpeg: {ffmpegPath}");
+        Console.WriteLine($"Args: {ffmpegArgs.Replace(_rtspUrl, MaskCredentials(_rtspUrl))}");
+
+        try
+        {
+            _ffmpegProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    Arguments = ffmpegArgs,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,  // Need this to send 'q' for graceful stop
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                },
+                EnableRaisingEvents = true
+            };
+
+            _ffmpegProcess.Exited += OnFFmpegExited;
+            _ffmpegProcess.Start();
+
+            // Start monitoring thread for segment timing
+            _ffmpegMonitorThread = new Thread(MonitorFFmpegSegment);
+            _ffmpegMonitorThread.Start();
+
+            StatusChanged?.Invoke(this, new RecordingStatus
+            {
+                IsRecording = true,
+                SegmentNumber = _segmentNumber,
+                SegmentPath = _currentRecordingPath,
+                SegmentStartTime = _segmentStartTime
+            });
+
+            _segmentNumber++;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to start FFmpeg: {ex.Message}");
+            Console.WriteLine("Make sure FFmpeg is installed and in your PATH.");
+            return false;
+        }
+    }
+
+    private void MonitorFFmpegSegment()
+    {
+        while (_isRecording && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
+        {
+            Thread.Sleep(1000);
+
+            // Check if segment duration exceeded
+            if (DateTime.Now - _segmentStartTime >= _segmentDuration)
+            {
+                Console.WriteLine($"Segment duration reached, starting new segment...");
+
+                // Start new segment (this will stop the current one)
+                StartNewFFmpegSegment();
+                break;
+            }
+        }
+    }
+
+    private void OnFFmpegExited(object? sender, EventArgs e)
+    {
+        if (_ffmpegProcess != null && !string.IsNullOrEmpty(_currentRecordingPath))
+        {
+            var exitCode = _ffmpegProcess.ExitCode;
+            Console.WriteLine($"FFmpeg segment completed (exit code: {exitCode}): {Path.GetFileName(_currentRecordingPath)}");
+
+            if (exitCode == 0 || File.Exists(_currentRecordingPath))
+            {
+                SegmentCreated?.Invoke(this, _currentRecordingPath);
+            }
+        }
+    }
+
+    private void StopFFmpegSegment()
+    {
+        if (_ffmpegProcess != null)
+        {
+            try
+            {
+                if (!_ffmpegProcess.HasExited)
+                {
+                    // Send 'q' to gracefully stop FFmpeg (allows it to finalize the MP4 file)
+                    try
+                    {
+                        // Write 'q' and close stdin - both signals FFmpeg to stop
+                        _ffmpegProcess.StandardInput.Write("q");
+                        _ffmpegProcess.StandardInput.Close();
+                        Console.WriteLine("Sent quit signal to FFmpeg...");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error sending quit to FFmpeg: {ex.Message}");
+                    }
+
+                    // Wait for graceful exit (give it more time to finalize)
+                    if (!_ffmpegProcess.WaitForExit(10000))
+                    {
+                        // If it didn't exit gracefully, force kill
+                        Console.WriteLine("FFmpeg didn't exit gracefully, forcing...");
+                        try { _ffmpegProcess.Kill(); } catch { }
+                        _ffmpegProcess.WaitForExit(2000);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"FFmpeg exited with code: {_ffmpegProcess.ExitCode}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error stopping FFmpeg: {ex.Message}");
+            }
+            finally
+            {
+                _ffmpegProcess.Dispose();
+                _ffmpegProcess = null;
+            }
+        }
+    }
+
     public string? StopRecording()
     {
         if (!_isRecording)
@@ -324,20 +558,29 @@ public class RecordingManager : IDisposable
 
         _isRecording = false;
 
-        _videoWriter?.Release();
-        _videoWriter?.Dispose();
-        _videoWriter = null;
+        StopFFmpegSegment();
 
         var recordingPath = _currentRecordingPath;
         _currentRecordingPath = null;
 
         Console.WriteLine($"Stopped recording: {recordingPath}");
+
+        if (!string.IsNullOrEmpty(recordingPath) && File.Exists(recordingPath))
+        {
+            SegmentCreated?.Invoke(this, recordingPath);
+        }
+
+        StatusChanged?.Invoke(this, new RecordingStatus
+        {
+            IsRecording = false,
+            SegmentNumber = _segmentNumber - 1,
+            SegmentPath = recordingPath,
+            SegmentStartTime = _segmentStartTime
+        });
+
         return recordingPath;
     }
 
-    /// <summary>
-    /// Capture a single frame from the current stream
-    /// </summary>
     public Mat? CaptureFrame()
     {
         if (_videoCapture == null || !_videoCapture.IsOpened())
@@ -351,9 +594,6 @@ public class RecordingManager : IDisposable
         return null;
     }
 
-    /// <summary>
-    /// Save a frame to file
-    /// </summary>
     public bool SaveFrame(Mat frame, string? filePath = null)
     {
         if (frame == null || frame.Empty())
@@ -362,7 +602,7 @@ public class RecordingManager : IDisposable
         if (string.IsNullOrEmpty(filePath))
         {
             var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            filePath = $"frame_{timestamp}.jpg";
+            filePath = Path.Combine(_recordingFolder, $"frame_{timestamp}.jpg");
         }
 
         try
@@ -393,12 +633,6 @@ public class RecordingManager : IDisposable
             {
                 consecutiveFailures = 0;
 
-                // Write to recording if active
-                if (_isRecording && _videoWriter != null && _videoWriter.IsOpened())
-                {
-                    _videoWriter.Write(frame);
-                }
-
                 // Raise event for GUI updates (clone frame to prevent disposal issues)
                 FrameCaptured?.Invoke(this, frame.Clone());
             }
@@ -412,7 +646,6 @@ public class RecordingManager : IDisposable
                     _videoCapture?.Release();
                     Thread.Sleep(1000);
 
-                    // Reconnect with same FFMPEG options
                     Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
                         "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
 
@@ -441,4 +674,12 @@ public class RecordingManager : IDisposable
         StopStreaming();
         _cancellationTokenSource?.Dispose();
     }
+}
+
+public class RecordingStatus
+{
+    public bool IsRecording { get; set; }
+    public int SegmentNumber { get; set; }
+    public string? SegmentPath { get; set; }
+    public DateTime SegmentStartTime { get; set; }
 }

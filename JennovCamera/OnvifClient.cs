@@ -30,8 +30,26 @@ public class OnvifClient : IDisposable
 
         _httpClient = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(30)
+            Timeout = TimeSpan.FromSeconds(30),
+            DefaultRequestHeaders = { ConnectionClose = false } // Keep connection alive
         };
+    }
+
+    /// <summary>
+    /// Warm up the HTTP connection by sending a lightweight request.
+    /// Call this after connecting to reduce latency on first PTZ command.
+    /// </summary>
+    public async Task WarmUpConnectionAsync()
+    {
+        try
+        {
+            // Send a simple request to establish TCP connection and pre-authenticate
+            await GetMediaProfileAsync();
+        }
+        catch
+        {
+            // Ignore errors - just trying to warm up
+        }
     }
 
     public void SetCredentials(string username, string password)
@@ -197,6 +215,39 @@ public class OnvifClient : IDisposable
         return response != null;
     }
 
+    /// <summary>
+    /// Fast continuous move - true fire and forget, returns immediately.
+    /// Use this for real-time PTZ control where responsiveness matters.
+    /// </summary>
+    public void ContinuousMoveFast(float panSpeed, float tiltSpeed, float zoomSpeed = 0)
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            _profileToken = "MainStream"; // Use default if not set
+
+        var securityHeader = GenerateSecurityHeader();
+        var panStr = panSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var tiltStr = tiltSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var zoomStr = zoomSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <tptz:ContinuousMove>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:Velocity>
+                <tt:PanTilt x=""{panStr}"" y=""{tiltStr}""/>
+                <tt:Zoom x=""{zoomStr}""/>
+            </tptz:Velocity>
+        </tptz:ContinuousMove>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/PTZ", soapEnvelope);
+    }
+
     public async Task<bool> StopAsync()
     {
         if (string.IsNullOrEmpty(_profileToken))
@@ -218,6 +269,164 @@ public class OnvifClient : IDisposable
 
         var response = await SendOnvifRequestAsync("/onvif/PTZ", soapEnvelope);
         return response != null;
+    }
+
+    /// <summary>
+    /// Fast stop - true fire and forget, returns immediately.
+    /// Use this for real-time PTZ control where responsiveness matters.
+    /// </summary>
+    public void StopFast()
+    {
+        if (string.IsNullOrEmpty(_profileToken))
+            _profileToken = "MainStream"; // Use default if not set
+
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:tptz=""http://www.onvif.org/ver20/ptz/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <tptz:Stop>
+            <tptz:ProfileToken>{_profileToken}</tptz:ProfileToken>
+            <tptz:PanTilt>true</tptz:PanTilt>
+            <tptz:Zoom>true</tptz:Zoom>
+        </tptz:Stop>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/PTZ", soapEnvelope);
+    }
+
+    // ===== Focus Control Methods =====
+
+    /// <summary>
+    /// Move focus toward near (close objects) - continuous movement
+    /// </summary>
+    public void FocusNearFast(float speed = 1.0f)
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var speedStr = (-speed).ToString(System.Globalization.CultureInfo.InvariantCulture); // Negative = Near
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:timg=""http://www.onvif.org/ver20/imaging/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <timg:Move>
+            <timg:VideoSourceToken>VideoSource_0</timg:VideoSourceToken>
+            <timg:Focus>
+                <tt:Continuous>
+                    <tt:Speed>{speedStr}</tt:Speed>
+                </tt:Continuous>
+            </timg:Focus>
+        </timg:Move>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/Imaging", soapEnvelope);
+    }
+
+    /// <summary>
+    /// Move focus toward far (distant objects) - continuous movement
+    /// </summary>
+    public void FocusFarFast(float speed = 1.0f)
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var speedStr = speed.ToString(System.Globalization.CultureInfo.InvariantCulture); // Positive = Far
+
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:timg=""http://www.onvif.org/ver20/imaging/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <timg:Move>
+            <timg:VideoSourceToken>VideoSource_0</timg:VideoSourceToken>
+            <timg:Focus>
+                <tt:Continuous>
+                    <tt:Speed>{speedStr}</tt:Speed>
+                </tt:Continuous>
+            </timg:Focus>
+        </timg:Move>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/Imaging", soapEnvelope);
+    }
+
+    /// <summary>
+    /// Stop focus movement
+    /// </summary>
+    public void FocusStopFast()
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:timg=""http://www.onvif.org/ver20/imaging/wsdl"">
+    {securityHeader}
+    <s:Body>
+        <timg:Stop>
+            <timg:VideoSourceToken>VideoSource_0</timg:VideoSourceToken>
+        </timg:Stop>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/Imaging", soapEnvelope);
+    }
+
+    /// <summary>
+    /// Trigger one-shot auto focus
+    /// </summary>
+    public void AutoFocusFast()
+    {
+        var securityHeader = GenerateSecurityHeader();
+        // Use Move with no parameters to trigger auto-focus on many cameras
+        // Some cameras use SetImagingSettings with FocusMode=AUTO instead
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:timg=""http://www.onvif.org/ver20/imaging/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <timg:SetImagingSettings>
+            <timg:VideoSourceToken>VideoSource_0</timg:VideoSourceToken>
+            <timg:ImagingSettings>
+                <tt:Focus>
+                    <tt:AutoFocusMode>AUTO</tt:AutoFocusMode>
+                </tt:Focus>
+            </timg:ImagingSettings>
+        </timg:SetImagingSettings>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/Imaging", soapEnvelope);
+    }
+
+    /// <summary>
+    /// Set focus to manual mode
+    /// </summary>
+    public void SetManualFocusFast()
+    {
+        var securityHeader = GenerateSecurityHeader();
+        var soapEnvelope = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<s:Envelope xmlns:s=""http://www.w3.org/2003/05/soap-envelope""
+            xmlns:timg=""http://www.onvif.org/ver20/imaging/wsdl""
+            xmlns:tt=""http://www.onvif.org/ver10/schema"">
+    {securityHeader}
+    <s:Body>
+        <timg:SetImagingSettings>
+            <timg:VideoSourceToken>VideoSource_0</timg:VideoSourceToken>
+            <timg:ImagingSettings>
+                <tt:Focus>
+                    <tt:AutoFocusMode>MANUAL</tt:AutoFocusMode>
+                </tt:Focus>
+            </timg:ImagingSettings>
+        </timg:SetImagingSettings>
+    </s:Body>
+</s:Envelope>";
+
+        SendOnvifRequestFireAndForget("/onvif/Imaging", soapEnvelope);
     }
 
     public async Task<bool> GotoPresetAsync(string presetToken, float speed = 1.0f)
@@ -740,6 +949,28 @@ public class OnvifClient : IDisposable
 
         var response = await SendOnvifRequestAsync("/onvif/Media", soapEnvelope);
         return response != null;
+    }
+
+    /// <summary>
+    /// Send ONVIF request with very short timeout, don't wait for response.
+    /// Used for PTZ commands where we only need to send, not receive.
+    /// </summary>
+    private void SendOnvifRequestFireAndForget(string endpoint, string soapEnvelope)
+    {
+        // True fire-and-forget: start the request and don't wait at all
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+                var content = new StringContent(soapEnvelope, Encoding.UTF8, "application/soap+xml");
+                await _httpClient.PostAsync(_baseUrl + endpoint, content, cts.Token);
+            }
+            catch
+            {
+                // Ignore all errors - command was sent
+            }
+        });
     }
 
     private async Task<XDocument?> SendOnvifRequestAsync(string endpoint, string soapEnvelope)
