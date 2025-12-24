@@ -18,12 +18,16 @@ public class RecordingManager : IDisposable
     private Process? _ffmpegProcess;
     private Thread? _ffmpegMonitorThread;
     private Thread? _ffmpegStderrThread;
+    private Thread? _ffmpegPreviewThread;
     private string? _currentRecordingPath;
     private long _lastFileSize;
     private DateTime _lastFileSizeCheck;
     private int _stagnantFileSizeCount;
     private bool _ffmpegHasError;
     private string? _ffmpegLastError;
+    private bool _useBufferedRecording = true;  // Enable buffered mode by default
+    private int _previewWidth = 960;   // Preview resolution (scaled down for performance)
+    private int _previewHeight = 540;
 
     // Segmented recording settings
     private string _recordingFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
@@ -637,17 +641,38 @@ public class RecordingManager : IDisposable
         // Get quality-based audio settings
         var audioSettings = GetAudioSettings(_recordingQuality);
 
-        // FFmpeg arguments - simple and stable
-        // Video: Direct copy (no quality loss)
-        // Audio: AAC encoding
-        var ffmpegArgs = $"-hide_banner -loglevel warning " +
-            $"-rtsp_transport tcp " +
-            $"-i \"{_rtspUrl}\" " +
-            $"-c:v copy " +
-            $"{audioSettings} " +
-            $"-movflags frag_keyframe+empty_moov " +
-            $"-t {segmentSeconds} " +
-            $"-y \"{_currentRecordingPath}\"";
+        // FFmpeg arguments with dual output:
+        // Output 1: Full quality recording to file (video copy, AAC audio)
+        // Output 2: Scaled preview frames to stdout (for live preview during recording)
+        string ffmpegArgs;
+
+        if (_useBufferedRecording)
+        {
+            // Dual output: file + preview frames
+            ffmpegArgs = $"-hide_banner -loglevel warning " +
+                $"-rtsp_transport tcp " +
+                $"-i \"{_rtspUrl}\" " +
+                // Output 1: Recording file (full quality)
+                $"-map 0:v -map 0:a -c:v copy {audioSettings} " +
+                $"-movflags frag_keyframe+empty_moov " +
+                $"-t {segmentSeconds} " +
+                $"-y \"{_currentRecordingPath}\" " +
+                // Output 2: Preview frames to stdout (scaled down)
+                $"-map 0:v -vf scale={_previewWidth}:{_previewHeight} " +
+                $"-c:v rawvideo -pix_fmt bgr24 -f rawvideo pipe:1";
+        }
+        else
+        {
+            // Simple recording only (no preview)
+            ffmpegArgs = $"-hide_banner -loglevel warning " +
+                $"-rtsp_transport tcp " +
+                $"-i \"{_rtspUrl}\" " +
+                $"-c:v copy " +
+                $"{audioSettings} " +
+                $"-movflags frag_keyframe+empty_moov " +
+                $"-t {segmentSeconds} " +
+                $"-y \"{_currentRecordingPath}\"";
+        }
 
         Console.WriteLine($"Starting FFmpeg segment {_segmentNumber}: {segmentName}");
         Console.WriteLine($"FFmpeg: {ffmpegPath}");
@@ -677,6 +702,13 @@ public class RecordingManager : IDisposable
             _ffmpegStderrThread = new Thread(MonitorFFmpegStderr);
             _ffmpegStderrThread.Start();
 
+            // Start preview frame reader thread if using buffered recording
+            if (_useBufferedRecording)
+            {
+                _ffmpegPreviewThread = new Thread(ReadPreviewFrames);
+                _ffmpegPreviewThread.Start();
+            }
+
             // Start monitoring thread for segment timing and file size
             _ffmpegMonitorThread = new Thread(MonitorFFmpegSegment);
             _ffmpegMonitorThread.Start();
@@ -699,6 +731,66 @@ public class RecordingManager : IDisposable
             LastError = ex.Message;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Read preview frames from FFmpeg stdout (raw BGR24 data)
+    /// </summary>
+    private void ReadPreviewFrames()
+    {
+        if (_ffmpegProcess == null) return;
+
+        int frameSize = _previewWidth * _previewHeight * 3; // BGR24 = 3 bytes per pixel
+        byte[] buffer = new byte[frameSize];
+
+        Console.WriteLine($"Starting preview frame reader: {_previewWidth}x{_previewHeight} ({frameSize} bytes/frame)");
+
+        try
+        {
+            using var stream = _ffmpegProcess.StandardOutput.BaseStream;
+
+            while (_isRecording && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
+            {
+                int bytesRead = 0;
+                int remaining = frameSize;
+
+                // Read exactly one frame worth of bytes
+                while (remaining > 0)
+                {
+                    int read = stream.Read(buffer, bytesRead, remaining);
+                    if (read <= 0)
+                    {
+                        Console.WriteLine("Preview stream ended");
+                        return;
+                    }
+                    bytesRead += read;
+                    remaining -= read;
+                }
+
+                // Convert raw bytes to Mat
+                try
+                {
+                    using var mat = new Mat(_previewHeight, _previewWidth, MatType.CV_8UC3);
+                    System.Runtime.InteropServices.Marshal.Copy(buffer, 0, mat.Data, frameSize);
+
+                    // Invoke event with cloned frame
+                    FrameCaptured?.Invoke(this, mat.Clone());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error creating preview frame: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_isRecording) // Only log if we're supposed to be recording
+            {
+                Console.WriteLine($"Preview frame reader error: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine("Preview frame reader stopped");
     }
 
     private void MonitorFFmpegStderr()
@@ -886,6 +978,13 @@ public class RecordingManager : IDisposable
         {
             _ffmpegStderrThread?.Join(2000);
             _ffmpegStderrThread = null;
+        }
+        catch { }
+
+        try
+        {
+            _ffmpegPreviewThread?.Join(2000);
+            _ffmpegPreviewThread = null;
         }
         catch { }
 

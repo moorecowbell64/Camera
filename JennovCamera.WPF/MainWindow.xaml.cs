@@ -1583,14 +1583,13 @@ public partial class MainWindow : System.Windows.Window
                 return;
             }
 
-            // Stop audio stream to free RTSP connection for recording
-            // Camera has limited concurrent connections
+            // Stop audio playback since recording captures audio directly
             var wasAudioPlaying = _audioManager?.IsPlaying ?? false;
             if (wasAudioPlaying)
             {
                 _audioManager?.Stop();
                 AudioButton.Content = "Enable Audio";
-                AudioStatusText.Text = "Audio: Paused for recording";
+                AudioStatusText.Text = "Audio: Captured in recording";
             }
 
             if (_recording.StartRecording())
@@ -1598,9 +1597,9 @@ public partial class MainWindow : System.Windows.Window
                 _isRecording = true;
                 RecordButton.Content = "Stop Recording";
                 RecordButton.Background = (Brush)Application.Current.Resources["AccentRedBrush"];
-                UpdateRecordingStatus("Recording (preview paused)", Brushes.Red);
-                NoVideoText.Text = "Recording in progress...\n\nPreview paused to ensure\nstable recording.";
-                NoVideoText.Visibility = Visibility.Visible;
+                UpdateRecordingStatus("Recording...", Brushes.Red);
+                // Preview is provided by FFmpeg during recording (buffered mode)
+                NoVideoText.Visibility = Visibility.Collapsed;
                 StartRecordingTimer();
             }
             else
