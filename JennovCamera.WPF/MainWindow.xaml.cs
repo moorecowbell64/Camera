@@ -126,7 +126,7 @@ public partial class MainWindow : System.Windows.Window
         // Apply saved settings to UI
         CameraIpText.Text = _settings.CameraIp;
         UsernameText.Text = _settings.Username;
-        // Password is not saved for security - user must enter each session
+        PasswordText.Password = _settings.Password;
         RecordingFolderText.Text = _settings.RecordingFolder;
         _clickTravelMultiplier = _settings.ClickTravelMultiplier;
         TravelSlider.Value = _clickTravelMultiplier;
@@ -452,9 +452,10 @@ public partial class MainWindow : System.Windows.Window
             ConnectButton.Content = "Disconnect";
             ConnectButton.IsEnabled = true;
 
-            // Save IP and username on successful connection (password not saved for security)
+            // Save credentials on successful connection
             _settings.CameraIp = ip;
             _settings.Username = username;
+            _settings.Password = password;
             _settings.Save();
 
             // Enable controls

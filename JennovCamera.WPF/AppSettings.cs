@@ -15,6 +15,7 @@ public class AppSettings
     public double ClickTravelMultiplier { get; set; } = 1700;
     public string CameraIp { get; set; } = "192.168.50.224";
     public string Username { get; set; } = "admin";
+    public string Password { get; set; } = "";  // Saved on successful login
     public string FFmpegPath { get; set; } = "";  // Empty = auto-detect
 
     public static AppSettings Load()
