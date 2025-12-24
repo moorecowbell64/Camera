@@ -1316,10 +1316,56 @@ public partial class MainWindow : System.Windows.Window
     {
         if (_client == null) return;
 
-        var preset = (PresetCombo.SelectedIndex + 1).ToString();
+        // Presets 5-8 in dropdown (index 0 = preset 5)
+        var preset = (PresetCombo.SelectedIndex + 5).ToString();
+        await GoToPresetAsync(preset);
+    }
+
+    private async void QuickPreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client == null) return;
+
+        if (sender is Button btn && btn.Tag is string preset)
+        {
+            await GoToPresetAsync(preset);
+        }
+    }
+
+    private async void GotoPresetNumber_Click(object sender, RoutedEventArgs e)
+    {
+        await GoToPresetFromInput();
+    }
+
+    private async void PresetNumberInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await GoToPresetFromInput();
+        }
+    }
+
+    private async Task GoToPresetFromInput()
+    {
+        if (_client == null) return;
+
+        var input = PresetNumberInput.Text.Trim();
+        if (int.TryParse(input, out int presetNum) && presetNum >= 1 && presetNum <= 255)
+        {
+            await GoToPresetAsync(presetNum.ToString());
+        }
+        else
+        {
+            MessageBox.Show("Please enter a valid preset number (1-255).",
+                "Invalid Preset", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async Task GoToPresetAsync(string preset)
+    {
         try
         {
-            await _client.Onvif.GotoPresetAsync(preset, 1.0f);
+            await _client!.Onvif.GotoPresetAsync(preset, 1.0f);
             UpdateConnectionStatus($"Moving to Preset {preset}", Brushes.Orange);
 
             // Reset status after delay

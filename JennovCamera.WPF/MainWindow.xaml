@@ -277,25 +277,53 @@
                         <!-- Presets -->
                         <GroupBox Header="Presets" x:Name="PresetsGroup" IsEnabled="False">
                             <StackPanel>
+                                <!-- Quick Preset Buttons -->
+                                <Label Content="Quick Presets:" Margin="0,0,0,2"/>
+                                <UniformGrid Rows="1" Columns="4" Margin="0,0,0,10">
+                                    <Button Content="1" Click="QuickPreset_Click" Tag="1"
+                                            ToolTip="Go to Preset 1"/>
+                                    <Button Content="2" Click="QuickPreset_Click" Tag="2"
+                                            ToolTip="Go to Preset 2" Margin="2,0,0,0"/>
+                                    <Button Content="3" Click="QuickPreset_Click" Tag="3"
+                                            ToolTip="Go to Preset 3" Margin="2,0,0,0"/>
+                                    <Button Content="4" Click="QuickPreset_Click" Tag="4"
+                                            ToolTip="Go to Preset 4" Margin="2,0,0,0"/>
+                                </UniformGrid>
+
+                                <!-- Direct Preset Number Input -->
                                 <Grid Margin="0,0,0,10">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <Label Content="Preset:" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="PresetCombo" Grid.Column="1" Margin="5"
-                                              SelectedIndex="0">
-                                        <ComboBoxItem Content="1"/>
-                                        <ComboBoxItem Content="2"/>
-                                        <ComboBoxItem Content="3"/>
-                                        <ComboBoxItem Content="4"/>
-                                        <ComboBoxItem Content="5"/>
-                                        <ComboBoxItem Content="6"/>
-                                        <ComboBoxItem Content="7"/>
-                                        <ComboBoxItem Content="8"/>
-                                    </ComboBox>
+                                    <Label Content="Go to #:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="PresetNumberInput" Grid.Column="1"
+                                             Text="1" MaxLength="3"
+                                             VerticalContentAlignment="Center"
+                                             KeyDown="PresetNumberInput_KeyDown"
+                                             ToolTip="Enter preset number (1-255) and press Enter"/>
+                                    <Button Grid.Column="2" Content="Go" Margin="5,0,0,0"
+                                            Click="GotoPresetNumber_Click"/>
                                 </Grid>
-                                <Button Content="Go to Preset" Click="GotoPresetButton_Click"/>
+
+                                <!-- Preset Dropdown (for presets 5-8) -->
+                                <Expander Header="More Presets (5-8)" IsExpanded="False" Margin="0,0,0,5">
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox x:Name="PresetCombo" SelectedIndex="0" Margin="0,0,5,0">
+                                            <ComboBoxItem Content="5"/>
+                                            <ComboBoxItem Content="6"/>
+                                            <ComboBoxItem Content="7"/>
+                                            <ComboBoxItem Content="8"/>
+                                        </ComboBox>
+                                        <Button Grid.Column="1" Content="Go"
+                                                Click="GotoPresetButton_Click"/>
+                                    </Grid>
+                                </Expander>
                             </StackPanel>
                         </GroupBox>
 
@@ -583,6 +611,26 @@
                                 <Button Content="Detect FFmpeg"
                                         Click="DetectFFmpeg_Click"
                                         Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- About -->
+                        <GroupBox Header="About">
+                            <StackPanel>
+                                <TextBlock FontWeight="Bold" Foreground="White" FontSize="14">
+                                    Jennov PTZ Camera Control
+                                </TextBlock>
+                                <TextBlock Foreground="#888888" FontSize="12" Margin="0,5,0,0">
+                                    Version 1.0.0
+                                </TextBlock>
+                                <TextBlock Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0">
+                                    Control Jennov PTZ cameras via ONVIF protocol.
+                                    Features: PTZ control, 4K streaming, recording,
+                                    presets, focus control, and more.
+                                </TextBlock>
+                                <TextBlock Foreground="#666666" FontSize="10" Margin="0,10,0,0">
+                                    Built with .NET 8, WPF, OpenCvSharp, LibVLCSharp
+                                </TextBlock>
                             </StackPanel>
                         </GroupBox>
 
