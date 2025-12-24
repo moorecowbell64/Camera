@@ -574,25 +574,20 @@ public class RecordingManager : IDisposable
 
         // Build FFmpeg command with robust options:
         // -rtsp_transport tcp: Use TCP for reliable streaming
-        // -stimeout 10000000: Socket timeout 10 seconds (in microseconds)
-        // -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5: Auto-reconnect options
         // -i: Input RTSP URL
         // -c:v copy: Copy video without re-encoding (fast, preserves quality)
         // -c:a aac: Re-encode audio to AAC (pcm_alaw from camera isn't supported in MP4)
-        // -movflags +frag_keyframe+empty_moov+default_base_moof: Fragmented MP4 for robustness
-        // -frag_duration 1000000: Fragment every 1 second for better recovery
+        // -movflags: Fragmented MP4 for robustness (allows playback even if recording interrupted)
         // -t: Duration limit for this segment
         var segmentSeconds = (int)_segmentDuration.TotalSeconds;
 
-        // Use more robust FFmpeg arguments
+        // FFmpeg arguments - simplified for compatibility
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
             $"-rtsp_transport tcp " +
-            $"-stimeout 10000000 " +
             $"-i \"{_rtspUrl}\" " +
             $"-c:v copy " +
             $"-c:a aac -b:a 128k " +
-            $"-movflags +frag_keyframe+empty_moov+default_base_moof " +
-            $"-frag_duration 1000000 " +
+            $"-movflags frag_keyframe+empty_moov " +
             $"-t {segmentSeconds} " +
             $"-y \"{_currentRecordingPath}\"";
 
