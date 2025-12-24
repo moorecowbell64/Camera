@@ -25,7 +25,7 @@ public class RecordingManager : IDisposable
     private int _stagnantFileSizeCount;
     private bool _ffmpegHasError;
     private string? _ffmpegLastError;
-    private bool _useBufferedRecording = true;  // MJPEG pipe for preview during recording
+    private bool _useBufferedRecording = false;  // Disabled - Windows pipe issues
     private int _previewWidth = 960;   // Preview resolution (scaled down for performance)
     private int _previewHeight = 540;
 
