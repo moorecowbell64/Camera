@@ -25,7 +25,7 @@ public class RecordingManager : IDisposable
     private int _stagnantFileSizeCount;
     private bool _ffmpegHasError;
     private string? _ffmpegLastError;
-    private bool _useBufferedRecording = false;  // Disabled - pipe output has issues on Windows
+    private bool _useBufferedRecording = true;  // MJPEG pipe for preview during recording
     private int _previewWidth = 960;   // Preview resolution (scaled down for performance)
     private int _previewHeight = 540;
 
@@ -648,18 +648,20 @@ public class RecordingManager : IDisposable
 
         if (_useBufferedRecording)
         {
-            // Dual output: file + preview frames
+            // Dual output: file + preview frames using tee muxer
+            // The tee muxer allows multiple outputs from a single encode pass
             ffmpegArgs = $"-hide_banner -loglevel warning " +
                 $"-rtsp_transport tcp " +
                 $"-i \"{_rtspUrl}\" " +
-                // Output 1: Recording file (full quality)
-                $"-map 0:v -map 0:a -c:v copy {audioSettings} " +
+                // Use filter_complex to split video stream
+                $"-filter_complex \"[0:v]split=2[rec][prev];[prev]scale={_previewWidth}:{_previewHeight}[preview]\" " +
+                // Output 1: Recording file (re-encoded since we're using filters)
+                $"-map \"[rec]\" -map 0:a -c:v libx264 -preset ultrafast -crf 18 {audioSettings} " +
                 $"-movflags frag_keyframe+empty_moov " +
                 $"-t {segmentSeconds} " +
                 $"-y \"{_currentRecordingPath}\" " +
-                // Output 2: Preview frames to stdout (scaled down)
-                $"-map 0:v -vf scale={_previewWidth}:{_previewHeight} " +
-                $"-c:v rawvideo -pix_fmt bgr24 -f rawvideo pipe:1";
+                // Output 2: Preview frames to stdout (scaled down, MJPEG for better pipe handling)
+                $"-map \"[preview]\" -c:v mjpeg -q:v 5 -f mjpeg pipe:1";
         }
         else
         {
@@ -734,53 +736,93 @@ public class RecordingManager : IDisposable
     }
 
     /// <summary>
-    /// Read preview frames from FFmpeg stdout (raw BGR24 data)
+    /// Read preview frames from FFmpeg stdout (MJPEG stream)
     /// </summary>
     private void ReadPreviewFrames()
     {
         if (_ffmpegProcess == null) return;
 
-        int frameSize = _previewWidth * _previewHeight * 3; // BGR24 = 3 bytes per pixel
-        byte[] buffer = new byte[frameSize];
-
-        Console.WriteLine($"Starting preview frame reader: {_previewWidth}x{_previewHeight} ({frameSize} bytes/frame)");
+        Console.WriteLine($"Starting MJPEG preview frame reader: {_previewWidth}x{_previewHeight}");
 
         try
         {
             using var stream = _ffmpegProcess.StandardOutput.BaseStream;
+            using var memStream = new MemoryStream();
+            byte[] buffer = new byte[65536]; // 64KB read buffer
+
+            // JPEG markers
+            const byte SOI_MARKER_1 = 0xFF;
+            const byte SOI_MARKER_2 = 0xD8;
+            const byte EOI_MARKER_1 = 0xFF;
+            const byte EOI_MARKER_2 = 0xD9;
+
+            bool inFrame = false;
+            int frameCount = 0;
 
             while (_isRecording && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
             {
-                int bytesRead = 0;
-                int remaining = frameSize;
-
-                // Read exactly one frame worth of bytes
-                while (remaining > 0)
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead <= 0)
                 {
-                    int read = stream.Read(buffer, bytesRead, remaining);
-                    if (read <= 0)
+                    Console.WriteLine("Preview stream ended");
+                    break;
+                }
+
+                // Process bytes looking for JPEG frames
+                for (int i = 0; i < bytesRead; i++)
+                {
+                    byte b = buffer[i];
+
+                    // Look for Start Of Image (SOI) marker: FF D8
+                    if (!inFrame && i < bytesRead - 1 && b == SOI_MARKER_1 && buffer[i + 1] == SOI_MARKER_2)
                     {
-                        Console.WriteLine("Preview stream ended");
-                        return;
+                        inFrame = true;
+                        memStream.SetLength(0);
+                        memStream.WriteByte(b);
                     }
-                    bytesRead += read;
-                    remaining -= read;
-                }
+                    else if (inFrame)
+                    {
+                        memStream.WriteByte(b);
 
-                // Convert raw bytes to Mat
-                try
-                {
-                    using var mat = new Mat(_previewHeight, _previewWidth, MatType.CV_8UC3);
-                    System.Runtime.InteropServices.Marshal.Copy(buffer, 0, mat.Data, frameSize);
+                        // Look for End Of Image (EOI) marker: FF D9
+                        if (memStream.Length >= 2)
+                        {
+                            var pos = memStream.Position;
+                            memStream.Position = pos - 2;
+                            int prev = memStream.ReadByte();
+                            int curr = memStream.ReadByte();
 
-                    // Invoke event with cloned frame
-                    FrameCaptured?.Invoke(this, mat.Clone());
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error creating preview frame: {ex.Message}");
+                            if (prev == EOI_MARKER_1 && curr == EOI_MARKER_2)
+                            {
+                                // Complete JPEG frame received
+                                inFrame = false;
+                                frameCount++;
+
+                                try
+                                {
+                                    // Decode JPEG to Mat
+                                    var jpegData = memStream.ToArray();
+                                    using var mat = Cv2.ImDecode(jpegData, ImreadModes.Color);
+
+                                    if (mat != null && !mat.Empty())
+                                    {
+                                        // Invoke event with cloned frame
+                                        FrameCaptured?.Invoke(this, mat.Clone());
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error decoding preview frame: {ex.Message}");
+                                }
+
+                                memStream.SetLength(0);
+                            }
+                        }
+                    }
                 }
             }
+
+            Console.WriteLine($"Preview frame reader stopped after {frameCount} frames");
         }
         catch (Exception ex)
         {
@@ -789,8 +831,6 @@ public class RecordingManager : IDisposable
                 Console.WriteLine($"Preview frame reader error: {ex.Message}");
             }
         }
-
-        Console.WriteLine("Preview frame reader stopped");
     }
 
     private void MonitorFFmpegStderr()

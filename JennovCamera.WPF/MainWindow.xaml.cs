@@ -1598,8 +1598,8 @@ public partial class MainWindow : System.Windows.Window
                 RecordButton.Content = "Stop Recording";
                 RecordButton.Background = (Brush)Application.Current.Resources["AccentRedBrush"];
                 UpdateRecordingStatus("Recording...", Brushes.Red);
-                NoVideoText.Text = "Recording in progress...\n\nPreview paused to ensure\nstable recording.";
-                NoVideoText.Visibility = Visibility.Visible;
+                // Preview is provided via FFmpeg MJPEG pipe during recording
+                NoVideoText.Visibility = Visibility.Collapsed;
                 StartRecordingTimer();
             }
             else
