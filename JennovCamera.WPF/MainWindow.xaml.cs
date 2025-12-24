@@ -1641,11 +1641,23 @@ public partial class MainWindow : System.Windows.Window
     {
         if (_recording == null || !_recording.IsRecording) return;
 
+        var status = _recording.GetRecordingStatus();
         var elapsed = _recording.CurrentSegmentElapsed;
-        var remaining = _recording.SegmentDuration - elapsed;
-        var segment = _recording.CurrentSegmentNumber;
 
-        RecordingSegmentInfo.Text = $"Segment {segment} | {elapsed:mm\\:ss} / {_recording.SegmentDuration:mm\\:ss}";
+        // Format file size
+        var fileSizeMB = status.FileSize / 1024.0 / 1024.0;
+        var sizeStr = fileSizeMB > 0 ? $" | {fileSizeMB:F1} MB" : "";
+
+        // Show bitrate if we have it
+        var bitrateStr = status.BitrateMbps > 0 ? $" @ {status.BitrateMbps:F1} Mbps" : "";
+
+        RecordingSegmentInfo.Text = $"Seg {status.SegmentNumber} | {elapsed:mm\\:ss}{sizeStr}{bitrateStr}";
+
+        // Show error status
+        if (status.HasError)
+        {
+            UpdateRecordingStatus($"Error: {status.ErrorMessage}", Brushes.Orange);
+        }
     }
 
     private void OnSegmentCreated(object? sender, string segmentPath)

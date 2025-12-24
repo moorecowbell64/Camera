@@ -17,7 +17,13 @@ public class RecordingManager : IDisposable
     // FFmpeg recording
     private Process? _ffmpegProcess;
     private Thread? _ffmpegMonitorThread;
+    private Thread? _ffmpegStderrThread;
     private string? _currentRecordingPath;
+    private long _lastFileSize;
+    private DateTime _lastFileSizeCheck;
+    private int _stagnantFileSizeCount;
+    private bool _ffmpegHasError;
+    private string? _ffmpegLastError;
 
     // Segmented recording settings
     private string _recordingFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
@@ -58,6 +64,41 @@ public class RecordingManager : IDisposable
     }
     public int CurrentSegmentNumber => _segmentNumber;
     public TimeSpan CurrentSegmentElapsed => _isRecording ? DateTime.Now - _segmentStartTime : TimeSpan.Zero;
+    public bool HasRecordingError => _ffmpegHasError;
+    public string? RecordingErrorMessage => _ffmpegLastError;
+
+    /// <summary>
+    /// Get current recording status with file size info
+    /// </summary>
+    public RecordingStatus GetRecordingStatus()
+    {
+        var status = new RecordingStatus
+        {
+            IsRecording = _isRecording,
+            SegmentNumber = _segmentNumber,
+            SegmentPath = _currentRecordingPath,
+            SegmentStartTime = _segmentStartTime,
+            HasError = _ffmpegHasError,
+            ErrorMessage = _ffmpegLastError
+        };
+
+        if (_isRecording && !string.IsNullOrEmpty(_currentRecordingPath) && File.Exists(_currentRecordingPath))
+        {
+            try
+            {
+                var fileInfo = new FileInfo(_currentRecordingPath);
+                status.FileSize = fileInfo.Length;
+                var elapsed = DateTime.Now - _segmentStartTime;
+                if (elapsed.TotalSeconds > 0)
+                {
+                    status.BitrateMbps = (fileInfo.Length * 8.0 / elapsed.TotalSeconds) / 1_000_000.0;
+                }
+            }
+            catch { }
+        }
+
+        return status;
+    }
 
     public RecordingManager(CameraClient client, StreamQuality quality = StreamQuality.Main)
     {
@@ -470,16 +511,36 @@ public class RecordingManager : IDisposable
         _currentRecordingPath = Path.Combine(_recordingFolder, segmentName);
         _segmentStartTime = timestamp;
 
-        // Build FFmpeg command
+        // Reset monitoring state
+        _lastFileSize = 0;
+        _lastFileSizeCheck = DateTime.Now;
+        _stagnantFileSizeCount = 0;
+        _ffmpegHasError = false;
+        _ffmpegLastError = null;
+
+        // Build FFmpeg command with robust options:
         // -rtsp_transport tcp: Use TCP for reliable streaming
+        // -stimeout 10000000: Socket timeout 10 seconds (in microseconds)
+        // -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5: Auto-reconnect options
         // -i: Input RTSP URL
         // -c:v copy: Copy video without re-encoding (fast, preserves quality)
         // -c:a aac: Re-encode audio to AAC (pcm_alaw from camera isn't supported in MP4)
-        // -movflags frag_keyframe+empty_moov: Fragmented MP4, playable even if interrupted
+        // -movflags +frag_keyframe+empty_moov+default_base_moof: Fragmented MP4 for robustness
+        // -frag_duration 1000000: Fragment every 1 second for better recovery
         // -t: Duration limit for this segment
         var segmentSeconds = (int)_segmentDuration.TotalSeconds;
 
-        var ffmpegArgs = $"-rtsp_transport tcp -i \"{_rtspUrl}\" -c:v copy -c:a aac -movflags frag_keyframe+empty_moov -t {segmentSeconds} -y \"{_currentRecordingPath}\"";
+        // Use more robust FFmpeg arguments
+        var ffmpegArgs = $"-hide_banner -loglevel warning " +
+            $"-rtsp_transport tcp " +
+            $"-stimeout 10000000 " +
+            $"-i \"{_rtspUrl}\" " +
+            $"-c:v copy " +
+            $"-c:a aac -b:a 128k " +
+            $"-movflags +frag_keyframe+empty_moov+default_base_moof " +
+            $"-frag_duration 1000000 " +
+            $"-t {segmentSeconds} " +
+            $"-y \"{_currentRecordingPath}\"";
 
         Console.WriteLine($"Starting FFmpeg segment {_segmentNumber}: {segmentName}");
         Console.WriteLine($"FFmpeg: {ffmpegPath}");
@@ -505,7 +566,11 @@ public class RecordingManager : IDisposable
             _ffmpegProcess.Exited += OnFFmpegExited;
             _ffmpegProcess.Start();
 
-            // Start monitoring thread for segment timing
+            // Start stderr monitoring thread
+            _ffmpegStderrThread = new Thread(MonitorFFmpegStderr);
+            _ffmpegStderrThread.Start();
+
+            // Start monitoring thread for segment timing and file size
             _ffmpegMonitorThread = new Thread(MonitorFFmpegSegment);
             _ffmpegMonitorThread.Start();
 
@@ -524,20 +589,122 @@ public class RecordingManager : IDisposable
         {
             Console.WriteLine($"Failed to start FFmpeg: {ex.Message}");
             Console.WriteLine("Make sure FFmpeg is installed and in your PATH.");
+            LastError = ex.Message;
             return false;
+        }
+    }
+
+    private void MonitorFFmpegStderr()
+    {
+        try
+        {
+            if (_ffmpegProcess == null) return;
+
+            using var reader = _ffmpegProcess.StandardError;
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                Console.WriteLine($"[FFmpeg] {line}");
+
+                // Check for errors
+                if (line.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("connection refused", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Connection timed out", StringComparison.OrdinalIgnoreCase))
+                {
+                    _ffmpegHasError = true;
+                    _ffmpegLastError = line;
+                    Console.WriteLine($"[FFmpeg ERROR] {line}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FFmpeg stderr monitor error: {ex.Message}");
         }
     }
 
     private void MonitorFFmpegSegment()
     {
+        // Wait a bit for the file to be created
+        Thread.Sleep(3000);
+
         while (_isRecording && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
         {
-            Thread.Sleep(1000);
+            Thread.Sleep(2000);
+
+            // Check file size is growing
+            if (!string.IsNullOrEmpty(_currentRecordingPath) && File.Exists(_currentRecordingPath))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(_currentRecordingPath);
+                    var currentSize = fileInfo.Length;
+                    var elapsedTime = DateTime.Now - _segmentStartTime;
+
+                    Console.WriteLine($"[Recording] {elapsedTime:mm\\:ss} - File size: {currentSize / 1024.0 / 1024.0:F2} MB");
+
+                    if (currentSize == _lastFileSize)
+                    {
+                        _stagnantFileSizeCount++;
+                        Console.WriteLine($"[Warning] File size not growing (count: {_stagnantFileSizeCount})");
+
+                        // If file hasn't grown in 10 seconds (5 checks), there's a problem
+                        if (_stagnantFileSizeCount >= 5)
+                        {
+                            Console.WriteLine("[ERROR] Recording appears stalled - file not growing");
+                            _ffmpegHasError = true;
+                            _ffmpegLastError = "Recording stalled - file not growing";
+
+                            // Try to restart the recording
+                            Console.WriteLine("Attempting to restart recording...");
+                            StopFFmpegSegment();
+                            Thread.Sleep(1000);
+
+                            if (!StartNewFFmpegSegment())
+                            {
+                                Console.WriteLine("Failed to restart recording");
+                                _isRecording = false;
+                            }
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        _stagnantFileSizeCount = 0;
+                        _lastFileSize = currentSize;
+
+                        // Calculate bitrate
+                        var bitrateMbps = (currentSize * 8.0 / elapsedTime.TotalSeconds) / 1_000_000.0;
+                        Console.WriteLine($"[Recording] Bitrate: {bitrateMbps:F2} Mbps");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error checking file size: {ex.Message}");
+                }
+            }
+            else
+            {
+                var elapsedSinceStart = DateTime.Now - _segmentStartTime;
+                if (elapsedSinceStart.TotalSeconds > 10)
+                {
+                    Console.WriteLine("[ERROR] Recording file not created after 10 seconds");
+                    _ffmpegHasError = true;
+                    _ffmpegLastError = "Recording file not created";
+                }
+            }
+
+            // Check for FFmpeg errors
+            if (_ffmpegHasError)
+            {
+                Console.WriteLine($"[FFmpeg Error] {_ffmpegLastError}");
+            }
 
             // Check if segment duration exceeded
             if (DateTime.Now - _segmentStartTime >= _segmentDuration)
             {
-                Console.WriteLine($"Segment duration reached, starting new segment...");
+                Console.WriteLine($"Segment duration reached ({_segmentDuration.TotalMinutes} min), starting new segment...");
 
                 // Start new segment (this will stop the current one)
                 StartNewFFmpegSegment();
@@ -573,6 +740,7 @@ public class RecordingManager : IDisposable
                     {
                         // Write 'q' and close stdin - both signals FFmpeg to stop
                         _ffmpegProcess.StandardInput.Write("q");
+                        _ffmpegProcess.StandardInput.Flush();
                         _ffmpegProcess.StandardInput.Close();
                         Console.WriteLine("Sent quit signal to FFmpeg...");
                     }
@@ -582,16 +750,16 @@ public class RecordingManager : IDisposable
                     }
 
                     // Wait for graceful exit (give it more time to finalize)
-                    if (!_ffmpegProcess.WaitForExit(10000))
+                    if (!_ffmpegProcess.WaitForExit(15000))
                     {
                         // If it didn't exit gracefully, force kill
-                        Console.WriteLine("FFmpeg didn't exit gracefully, forcing...");
+                        Console.WriteLine("FFmpeg didn't exit gracefully after 15s, forcing...");
                         try { _ffmpegProcess.Kill(); } catch { }
                         _ffmpegProcess.WaitForExit(2000);
                     }
                     else
                     {
-                        Console.WriteLine($"FFmpeg exited with code: {_ffmpegProcess.ExitCode}");
+                        Console.WriteLine($"FFmpeg exited gracefully with code: {_ffmpegProcess.ExitCode}");
                     }
                 }
             }
@@ -604,6 +772,21 @@ public class RecordingManager : IDisposable
                 _ffmpegProcess.Dispose();
                 _ffmpegProcess = null;
             }
+        }
+
+        // Wait for monitoring threads to finish
+        try
+        {
+            _ffmpegStderrThread?.Join(2000);
+            _ffmpegStderrThread = null;
+        }
+        catch { }
+
+        // Log final file size
+        if (!string.IsNullOrEmpty(_currentRecordingPath) && File.Exists(_currentRecordingPath))
+        {
+            var fileInfo = new FileInfo(_currentRecordingPath);
+            Console.WriteLine($"Recording segment saved: {fileInfo.Name} ({fileInfo.Length / 1024.0 / 1024.0:F2} MB)");
         }
     }
 
@@ -738,4 +921,8 @@ public class RecordingStatus
     public int SegmentNumber { get; set; }
     public string? SegmentPath { get; set; }
     public DateTime SegmentStartTime { get; set; }
+    public long FileSize { get; set; }
+    public double BitrateMbps { get; set; }
+    public bool HasError { get; set; }
+    public string? ErrorMessage { get; set; }
 }
