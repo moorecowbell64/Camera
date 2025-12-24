@@ -285,6 +285,44 @@ public partial class MainWindow : System.Windows.Window
                 _ptz.FocusStopFast();
                 break;
 
+            // Number keys for quick presets (1-9)
+            case Key.D1:
+            case Key.NumPad1:
+                _ = GoToPresetAsync("1");
+                break;
+            case Key.D2:
+            case Key.NumPad2:
+                _ = GoToPresetAsync("2");
+                break;
+            case Key.D3:
+            case Key.NumPad3:
+                _ = GoToPresetAsync("3");
+                break;
+            case Key.D4:
+            case Key.NumPad4:
+                _ = GoToPresetAsync("4");
+                break;
+            case Key.D5:
+            case Key.NumPad5:
+                _ = GoToPresetAsync("5");
+                break;
+            case Key.D6:
+            case Key.NumPad6:
+                _ = GoToPresetAsync("6");
+                break;
+            case Key.D7:
+            case Key.NumPad7:
+                _ = GoToPresetAsync("7");
+                break;
+            case Key.D8:
+            case Key.NumPad8:
+                _ = GoToPresetAsync("8");
+                break;
+            case Key.D9:
+            case Key.NumPad9:
+                _ = GoToPresetAsync("9");
+                break;
+
             default:
                 e.Handled = false;
                 break;

@@ -144,7 +144,10 @@
                                     <Run FontWeight="Bold" Foreground="White">Focus Control:</Run><LineBreak/>
                                     W - Focus Near<LineBreak/>
                                     S - Focus Far<LineBreak/>
-                                    F - Auto Focus
+                                    F - Auto Focus<LineBreak/>
+                                    <LineBreak/>
+                                    <Run FontWeight="Bold" Foreground="White">Presets:</Run><LineBreak/>
+                                    1-9 - Go to Preset
                                 </TextBlock>
                             </Border>
                         </Expander>
