@@ -556,7 +556,9 @@ public class RecordingManager : IDisposable
         {
             Console.WriteLine("Stopping preview stream to free connection for recording...");
             StopStreaming();
-            Thread.Sleep(500); // Give camera time to close the connection
+            // Give camera time to fully close the connection
+            Console.WriteLine("Waiting for camera to release connection...");
+            Thread.Sleep(2000);
         }
 
         try

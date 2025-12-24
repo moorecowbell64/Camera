@@ -1583,12 +1583,24 @@ public partial class MainWindow : System.Windows.Window
                 return;
             }
 
+            // Stop audio stream to free RTSP connection for recording
+            // Camera has limited concurrent connections
+            var wasAudioPlaying = _audioManager?.IsPlaying ?? false;
+            if (wasAudioPlaying)
+            {
+                _audioManager?.Stop();
+                AudioButton.Content = "Enable Audio";
+                AudioStatusText.Text = "Audio: Paused for recording";
+            }
+
             if (_recording.StartRecording())
             {
                 _isRecording = true;
                 RecordButton.Content = "Stop Recording";
                 RecordButton.Background = (Brush)Application.Current.Resources["AccentRedBrush"];
-                UpdateRecordingStatus("Recording...", Brushes.Red);
+                UpdateRecordingStatus("Recording (preview paused)", Brushes.Red);
+                NoVideoText.Text = "Recording in progress...\n\nPreview paused to ensure\nstable recording.";
+                NoVideoText.Visibility = Visibility.Visible;
                 StartRecordingTimer();
             }
             else
@@ -1623,6 +1635,11 @@ public partial class MainWindow : System.Windows.Window
                     RecordButton.IsEnabled = true;
                     UpdateRecordingStatus("Not Recording", Brushes.Gray);
                     RecordingSegmentInfo.Text = "30min segments, 10s overlap";
+
+                    // Hide recording message, preview will restart automatically
+                    NoVideoText.Text = "No Video Feed\n\nClick 'Connect' to start";
+                    NoVideoText.Visibility = Visibility.Collapsed;
+                    AudioStatusText.Text = "Audio: Disabled";
 
                     if (!string.IsNullOrEmpty(filename))
                     {
