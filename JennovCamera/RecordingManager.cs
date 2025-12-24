@@ -550,14 +550,13 @@ public class RecordingManager : IDisposable
             return false;
         }
 
-        if (!_isStreaming)
+        // Stop the preview stream to free up the RTSP connection for FFmpeg
+        // Many cameras only support 2-3 concurrent connections
+        if (_isStreaming)
         {
-            if (!StartStreaming())
-            {
-                LastError = "Cannot start recording without active stream";
-                Console.WriteLine(LastError);
-                return false;
-            }
+            Console.WriteLine("Stopping preview stream to free connection for recording...");
+            StopStreaming();
+            Thread.Sleep(500); // Give camera time to close the connection
         }
 
         try
@@ -922,6 +921,11 @@ public class RecordingManager : IDisposable
             SegmentPath = recordingPath,
             SegmentStartTime = _segmentStartTime
         });
+
+        // Restart the preview stream after recording stops
+        Console.WriteLine("Restarting preview stream...");
+        Thread.Sleep(500); // Give FFmpeg time to release the connection
+        StartStreaming();
 
         return recordingPath;
     }
