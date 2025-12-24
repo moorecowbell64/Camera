@@ -636,17 +636,14 @@ public class RecordingManager : IDisposable
         // Get quality-based audio settings
         var audioSettings = GetAudioSettings(_recordingQuality);
 
-        // FFmpeg arguments optimized for maximum quality and A/V sync
-        // Video: Direct copy from source (no quality loss)
-        // Audio: High-quality AAC encoding with settings based on quality preset
+        // FFmpeg arguments - simple and stable
+        // Video: Direct copy (no quality loss)
+        // Audio: AAC encoding
         var ffmpegArgs = $"-hide_banner -loglevel warning " +
-            $"-use_wallclock_as_timestamps 1 " + // Use real timestamps for RTSP
             $"-rtsp_transport tcp " +
             $"-i \"{_rtspUrl}\" " +
-            $"-c:v copy " +                     // Copy video stream directly (no re-encoding = no quality loss)
-            $"{audioSettings} " +               // Quality-based audio encoding
-            $"-async 1 " +                      // Sync audio to video timestamps
-            $"-max_muxing_queue_size 1024 " +   // Prevent muxing buffer issues
+            $"-c:v copy " +
+            $"{audioSettings} " +
             $"-movflags frag_keyframe+empty_moov " +
             $"-t {segmentSeconds} " +
             $"-y \"{_currentRecordingPath}\"";
