@@ -126,7 +126,7 @@ public partial class MainWindow : System.Windows.Window
         // Apply saved settings to UI
         CameraIpText.Text = _settings.CameraIp;
         UsernameText.Text = _settings.Username;
-        PasswordText.Password = "hydroLob99";
+        // Password is not saved for security - user must enter each session
         RecordingFolderText.Text = _settings.RecordingFolder;
         _clickTravelMultiplier = _settings.ClickTravelMultiplier;
         TravelSlider.Value = _clickTravelMultiplier;
@@ -150,14 +150,33 @@ public partial class MainWindow : System.Windows.Window
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // Confirm if recording is active
+        if (_isRecording)
+        {
+            var result = MessageBox.Show(
+                "Recording is currently active. Closing will stop the recording.\n\nDo you want to close?",
+                "Confirm Close",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+
         // Save settings on close
         _settings.Save();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        // Auto-connect to camera at startup
-        await ConnectAsync();
+        // Auto-connect to camera at startup only if credentials are provided
+        if (!string.IsNullOrEmpty(PasswordText.Password))
+        {
+            await ConnectAsync();
+        }
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -168,7 +187,30 @@ public partial class MainWindow : System.Windows.Window
         }
         else
         {
+            // Confirm disconnect if recording is active
+            if (_isRecording)
+            {
+                var result = MessageBox.Show(
+                    "Recording is currently active. Disconnecting will stop the recording.\n\nDo you want to disconnect?",
+                    "Confirm Disconnect",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result != MessageBoxResult.Yes)
+                    return;
+            }
+
             Disconnect();
+        }
+    }
+
+    private async void PasswordText_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Connect on Enter key press in password field
+        if (e.Key == Key.Enter && !_isConnected)
+        {
+            e.Handled = true;
+            await ConnectAsync();
         }
     }
 
@@ -176,12 +218,41 @@ public partial class MainWindow : System.Windows.Window
     {
         try
         {
-            UpdateConnectionStatus("Connecting...", Brushes.Orange);
-            ConnectButton.IsEnabled = false;
-
             var ip = CameraIpText.Text.Trim();
             var username = UsernameText.Text.Trim();
             var password = PasswordText.Password;
+
+            // Validate inputs
+            if (string.IsNullOrEmpty(ip))
+            {
+                MessageBox.Show("Please enter a camera IP address.",
+                    "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!System.Net.IPAddress.TryParse(ip, out _))
+            {
+                MessageBox.Show("Please enter a valid IP address (e.g., 192.168.1.100).",
+                    "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(username))
+            {
+                MessageBox.Show("Please enter a username.",
+                    "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(password))
+            {
+                MessageBox.Show("Please enter a password.",
+                    "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            UpdateConnectionStatus("Connecting...", Brushes.Orange);
+            ConnectButton.IsEnabled = false;
 
             _client = new CameraClient(ip, 80);
 
@@ -229,6 +300,11 @@ public partial class MainWindow : System.Windows.Window
             UpdateConnectionStatus("Connected", Brushes.LimeGreen);
             ConnectButton.Content = "Disconnect";
             ConnectButton.IsEnabled = true;
+
+            // Save IP and username on successful connection (password not saved for security)
+            _settings.CameraIp = ip;
+            _settings.Username = username;
+            _settings.Save();
 
             // Enable controls
             PTZControls.IsEnabled = true;

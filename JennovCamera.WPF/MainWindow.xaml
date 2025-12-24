@@ -384,7 +384,8 @@
                                     <Label Grid.Row="2" Grid.Column="0" Content="Pass:" VerticalAlignment="Center"/>
                                     <PasswordBox x:Name="PasswordText" Grid.Row="2" Grid.Column="1"
                                                  Margin="5" Background="#1E1E1E" Foreground="White"
-                                                 BorderBrush="{StaticResource PrimaryBrush}"/>
+                                                 BorderBrush="{StaticResource PrimaryBrush}"
+                                                 KeyDown="PasswordText_KeyDown"/>
                                 </Grid>
 
                                 <Button x:Name="ConnectButton"
