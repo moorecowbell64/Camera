@@ -25,9 +25,11 @@ public class RecordingManager : IDisposable
     private int _stagnantFileSizeCount;
     private bool _ffmpegHasError;
     private string? _ffmpegLastError;
-    private bool _useBufferedRecording = false;  // Disabled - Windows pipe issues
+    private bool _useDualStreamMode = true;  // Use sub-stream for preview, main for recording
+    private bool _isUsingSubStream;  // Currently using sub-stream for preview
     private int _previewWidth = 960;   // Preview resolution (scaled down for performance)
     private int _previewHeight = 540;
+    private string? _subStreamUrl;  // Sub-stream URL for preview during recording
 
     // Segmented recording settings
     private string _recordingFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
@@ -167,7 +169,11 @@ public class RecordingManager : IDisposable
         _client = client;
         _currentQuality = quality;
         _rtspUrl = client.Onvif.GetRtspUrl(quality);
-        Console.WriteLine($"RecordingManager initialized with RTSP URL: {_rtspUrl}");
+        // Get sub-stream URL for preview during recording (dual-stream mode)
+        _subStreamUrl = client.Onvif.GetRtspUrl(StreamQuality.Sub);
+        Console.WriteLine($"RecordingManager initialized:");
+        Console.WriteLine($"  Main stream: {MaskCredentials(_rtspUrl)}");
+        Console.WriteLine($"  Sub stream:  {MaskCredentials(_subStreamUrl)}");
     }
 
     /// <summary>
@@ -370,7 +376,57 @@ public class RecordingManager : IDisposable
         _videoCapture = null;
 
         _isStreaming = false;
+        _isUsingSubStream = false;
         Console.WriteLine("Stopped streaming");
+    }
+
+    /// <summary>
+    /// Start preview from sub-stream (used during recording for dual-stream mode)
+    /// </summary>
+    private bool StartSubStreamPreview()
+    {
+        if (string.IsNullOrEmpty(_subStreamUrl))
+        {
+            Console.WriteLine("No sub-stream URL available");
+            return false;
+        }
+
+        try
+        {
+            Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|buffer_size;2097152|max_delay;500000");
+
+            _videoCapture = new VideoCapture(_subStreamUrl, VideoCaptureAPIs.FFMPEG);
+
+            if (!_videoCapture.IsOpened())
+            {
+                Console.WriteLine($"Failed to open sub-stream: {MaskCredentials(_subStreamUrl)}");
+                return false;
+            }
+
+            _videoCapture.Set(VideoCaptureProperties.BufferSize, 5);
+
+            var width = (int)_videoCapture.Get(VideoCaptureProperties.FrameWidth);
+            var height = (int)_videoCapture.Get(VideoCaptureProperties.FrameHeight);
+            var fps = _videoCapture.Get(VideoCaptureProperties.Fps);
+            if (fps <= 0) fps = 20;
+
+            Console.WriteLine($"Sub-stream preview: {width}x{height} @ {fps}fps");
+
+            _isStreaming = true;
+            _isUsingSubStream = true;
+            _cancellationTokenSource = new CancellationTokenSource();
+            _captureThread = new Thread(() => CaptureLoop(_cancellationTokenSource.Token));
+            _captureThread.Start();
+
+            StreamStatusChanged?.Invoke(this, "Preview (sub-stream)");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to start sub-stream preview: {ex.Message}");
+            return false;
+        }
     }
 
     // Known FFmpeg installation paths to check
@@ -554,15 +610,30 @@ public class RecordingManager : IDisposable
             return false;
         }
 
-        // Stop the preview stream to free up the RTSP connection for FFmpeg
-        // Many cameras only support 2-3 concurrent connections
-        if (_isStreaming)
+        // Dual-stream mode: Switch preview to sub-stream, record from main stream
+        // This uses 2 connections (sub-stream + main stream) which most cameras support
+        if (_useDualStreamMode && !string.IsNullOrEmpty(_subStreamUrl))
         {
-            Console.WriteLine("Stopping preview stream to free connection for recording...");
-            StopStreaming();
-            // Give camera time to fully close the connection
-            Console.WriteLine("Waiting for camera to release connection...");
-            Thread.Sleep(2000);
+            if (_isStreaming)
+            {
+                Console.WriteLine("Switching preview to sub-stream for recording...");
+                StopStreaming();
+                Thread.Sleep(500); // Brief pause for connection cleanup
+
+                // Start preview from sub-stream
+                StartSubStreamPreview();
+            }
+        }
+        else
+        {
+            // Fallback: Stop preview entirely (single connection mode)
+            if (_isStreaming)
+            {
+                Console.WriteLine("Stopping preview stream to free connection for recording...");
+                StopStreaming();
+                Console.WriteLine("Waiting for camera to release connection...");
+                Thread.Sleep(2000);
+            }
         }
 
         try
@@ -641,40 +712,15 @@ public class RecordingManager : IDisposable
         // Get quality-based audio settings
         var audioSettings = GetAudioSettings(_recordingQuality);
 
-        // FFmpeg arguments with dual output:
-        // Output 1: Full quality recording to file (video copy, AAC audio)
-        // Output 2: Scaled preview frames to stdout (for live preview during recording)
-        string ffmpegArgs;
-
-        if (_useBufferedRecording)
-        {
-            // Dual output: file + preview frames using tee muxer
-            // The tee muxer allows multiple outputs from a single encode pass
-            ffmpegArgs = $"-hide_banner -loglevel warning " +
-                $"-rtsp_transport tcp " +
-                $"-i \"{_rtspUrl}\" " +
-                // Use filter_complex to split video stream
-                $"-filter_complex \"[0:v]split=2[rec][prev];[prev]scale={_previewWidth}:{_previewHeight}[preview]\" " +
-                // Output 1: Recording file (re-encoded since we're using filters)
-                $"-map \"[rec]\" -map 0:a -c:v libx264 -preset ultrafast -crf 18 {audioSettings} " +
-                $"-movflags frag_keyframe+empty_moov " +
-                $"-t {segmentSeconds} " +
-                $"-y \"{_currentRecordingPath}\" " +
-                // Output 2: Preview frames to stdout (scaled down, MJPEG for better pipe handling)
-                $"-map \"[preview]\" -c:v mjpeg -q:v 5 -f mjpeg pipe:1";
-        }
-        else
-        {
-            // Simple recording only (no preview)
-            ffmpegArgs = $"-hide_banner -loglevel warning " +
-                $"-rtsp_transport tcp " +
-                $"-i \"{_rtspUrl}\" " +
-                $"-c:v copy " +
-                $"{audioSettings} " +
-                $"-movflags frag_keyframe+empty_moov " +
-                $"-t {segmentSeconds} " +
-                $"-y \"{_currentRecordingPath}\"";
-        }
+        // Simple recording - preview is handled separately via sub-stream (dual-stream mode)
+        var ffmpegArgs = $"-hide_banner -loglevel warning " +
+            $"-rtsp_transport tcp " +
+            $"-i \"{_rtspUrl}\" " +
+            $"-c:v copy " +
+            $"{audioSettings} " +
+            $"-movflags frag_keyframe+empty_moov " +
+            $"-t {segmentSeconds} " +
+            $"-y \"{_currentRecordingPath}\"";
 
         Console.WriteLine($"Starting FFmpeg segment {_segmentNumber}: {segmentName}");
         Console.WriteLine($"FFmpeg: {ffmpegPath}");
@@ -703,13 +749,6 @@ public class RecordingManager : IDisposable
             // Start stderr monitoring thread
             _ffmpegStderrThread = new Thread(MonitorFFmpegStderr);
             _ffmpegStderrThread.Start();
-
-            // Start preview frame reader thread if using buffered recording
-            if (_useBufferedRecording)
-            {
-                _ffmpegPreviewThread = new Thread(ReadPreviewFrames);
-                _ffmpegPreviewThread.Start();
-            }
 
             // Start monitoring thread for segment timing and file size
             _ffmpegMonitorThread = new Thread(MonitorFFmpegSegment);
@@ -1063,10 +1102,19 @@ public class RecordingManager : IDisposable
             SegmentStartTime = _segmentStartTime
         });
 
-        // Restart the preview stream after recording stops
-        Console.WriteLine("Restarting preview stream...");
+        // Switch back from sub-stream to main stream preview
+        if (_isUsingSubStream)
+        {
+            Console.WriteLine("Switching back to main stream preview...");
+            StopStreaming();
+            Thread.Sleep(500);
+        }
+
+        // Restart the main stream preview
+        Console.WriteLine("Restarting main stream preview...");
         Thread.Sleep(500); // Give FFmpeg time to release the connection
         StartStreaming();
+        StreamStatusChanged?.Invoke(this, "Connected");
 
         return recordingPath;
     }
