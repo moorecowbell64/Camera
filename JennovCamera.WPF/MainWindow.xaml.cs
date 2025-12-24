@@ -1418,6 +1418,55 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private async void SavePreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client == null) return;
+
+        var presetNumStr = SavePresetNumber.Text.Trim();
+        var presetName = SavePresetName.Text.Trim();
+
+        if (!int.TryParse(presetNumStr, out int presetNum) || presetNum < 1 || presetNum > 255)
+        {
+            MessageBox.Show("Please enter a valid preset number (1-255).",
+                "Invalid Preset", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            UpdateConnectionStatus($"Saving Preset {presetNum}...", Brushes.Orange);
+
+            // Use preset number as token (common for ONVIF cameras)
+            var result = await _client.Onvif.SetPresetAsync(
+                string.IsNullOrEmpty(presetName) ? $"Preset{presetNum}" : presetName,
+                presetNum.ToString());
+
+            if (result != null)
+            {
+                UpdateConnectionStatus($"Saved Preset {presetNum}", Brushes.LimeGreen);
+                MessageBox.Show($"Current position saved as Preset {presetNum}.",
+                    "Preset Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                UpdateConnectionStatus("Save Failed", Brushes.Orange);
+                MessageBox.Show("Failed to save preset. The camera may not support this feature.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            // Reset status after delay
+            await Task.Delay(2000);
+            if (_isConnected)
+                UpdateConnectionStatus("Connected", Brushes.LimeGreen);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to save preset: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            UpdateConnectionStatus("Connected", Brushes.LimeGreen);
+        }
+    }
+
     private void BrowseRecordingFolder_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog

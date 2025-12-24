@@ -327,6 +327,29 @@
                                                 Click="GotoPresetButton_Click"/>
                                     </Grid>
                                 </Expander>
+
+                                <!-- Save Current Position as Preset -->
+                                <Expander Header="Save Position" IsExpanded="False" Margin="0,5,0,0">
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="SavePresetNumber"
+                                                 Text="1" MaxLength="3"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="Preset number to save (1-255)"/>
+                                        <TextBox x:Name="SavePresetName" Grid.Column="1"
+                                                 Text="Position" Margin="5,0,0,0"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="Optional name for the preset"/>
+                                        <Button Grid.Column="2" Content="Save"
+                                                Click="SavePreset_Click"
+                                                Margin="5,0,0,0" Width="50"
+                                                ToolTip="Save current camera position as preset"/>
+                                    </Grid>
+                                </Expander>
                             </StackPanel>
                         </GroupBox>
 
