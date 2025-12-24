@@ -42,6 +42,7 @@ public class RecordingManager : IDisposable
     public event EventHandler<Mat>? FrameCaptured;
     public event EventHandler<string>? SegmentCreated;
     public event EventHandler<RecordingStatus>? StatusChanged;
+    public event EventHandler<string>? StreamStatusChanged;
 
     public bool IsRecording => _isRecording;
     public bool IsStreaming => _isStreaming;
@@ -914,16 +915,47 @@ public class RecordingManager : IDisposable
     {
         int consecutiveFailures = 0;
         const int maxFailures = 30;
+        int reconnectAttempts = 0;
+        const int maxReconnectAttempts = 10;
+        DateTime lastSuccessfulFrame = DateTime.Now;
 
         while (!cancellationToken.IsCancellationRequested)
         {
             if (_videoCapture == null || !_videoCapture.IsOpened())
-                break;
+            {
+                // Try to reconnect
+                if (reconnectAttempts < maxReconnectAttempts)
+                {
+                    reconnectAttempts++;
+                    var waitSeconds = Math.Min(reconnectAttempts * 2, 30); // Exponential backoff up to 30s
+                    Console.WriteLine($"Stream disconnected. Reconnect attempt {reconnectAttempts}/{maxReconnectAttempts} in {waitSeconds}s...");
+                    StreamStatusChanged?.Invoke(this, $"Reconnecting ({reconnectAttempts}/{maxReconnectAttempts})...");
+
+                    Thread.Sleep(waitSeconds * 1000);
+                    if (cancellationToken.IsCancellationRequested) break;
+
+                    if (!TryReconnectStream())
+                    {
+                        continue;
+                    }
+                    Console.WriteLine("Stream reconnected successfully!");
+                    StreamStatusChanged?.Invoke(this, "Connected");
+                    reconnectAttempts = 0;
+                }
+                else
+                {
+                    Console.WriteLine($"Max reconnect attempts ({maxReconnectAttempts}) reached. Stopping stream.");
+                    StreamStatusChanged?.Invoke(this, "Connection lost - max retries exceeded");
+                    break;
+                }
+            }
 
             using var frame = new Mat();
-            if (_videoCapture.Read(frame) && !frame.Empty())
+            if (_videoCapture!.Read(frame) && !frame.Empty())
             {
                 consecutiveFailures = 0;
+                reconnectAttempts = 0;
+                lastSuccessfulFrame = DateTime.Now;
 
                 // Raise event for GUI updates (clone frame to prevent disposal issues)
                 FrameCaptured?.Invoke(this, frame.Clone());
@@ -931,25 +963,26 @@ public class RecordingManager : IDisposable
             else
             {
                 consecutiveFailures++;
+
+                // Check if stream seems dead (no frames for 10+ seconds)
+                var timeSinceLastFrame = DateTime.Now - lastSuccessfulFrame;
+                if (timeSinceLastFrame.TotalSeconds > 10)
+                {
+                    Console.WriteLine($"No frames received for {timeSinceLastFrame.TotalSeconds:F0}s, forcing reconnect...");
+                    StreamStatusChanged?.Invoke(this, "Stream stalled - reconnecting...");
+                    _videoCapture?.Release();
+                    _videoCapture = null;
+                    consecutiveFailures = 0;
+                    continue;
+                }
+
                 if (consecutiveFailures >= maxFailures)
                 {
                     Console.WriteLine("Too many capture failures, attempting reconnect...");
+                    StreamStatusChanged?.Invoke(this, "Stream error - reconnecting...");
 
                     _videoCapture?.Release();
-                    Thread.Sleep(1000);
-
-                    Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                        "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
-
-                    _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
-                    _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
-
-                    if (_currentQuality == StreamQuality.Main)
-                    {
-                        _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
-                        _videoCapture.Set(VideoCaptureProperties.FrameHeight, 2160);
-                    }
-
+                    _videoCapture = null;
                     consecutiveFailures = 0;
                 }
                 else
@@ -957,6 +990,49 @@ public class RecordingManager : IDisposable
                     Thread.Sleep(100);
                 }
             }
+        }
+    }
+
+    private bool TryReconnectStream()
+    {
+        try
+        {
+            _videoCapture?.Release();
+            _videoCapture?.Dispose();
+
+            Environment.SetEnvironmentVariable("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|buffer_size;8388608|max_delay;500000|analyzeduration;10000000|probesize;10000000|fflags;nobuffer");
+
+            _videoCapture = new VideoCapture(_rtspUrl, VideoCaptureAPIs.FFMPEG);
+
+            if (!_videoCapture.IsOpened())
+            {
+                Console.WriteLine("Failed to open stream during reconnect");
+                return false;
+            }
+
+            _videoCapture.Set(VideoCaptureProperties.BufferSize, 10);
+
+            if (_currentQuality == StreamQuality.Main)
+            {
+                _videoCapture.Set(VideoCaptureProperties.FrameWidth, 3840);
+                _videoCapture.Set(VideoCaptureProperties.FrameHeight, 2160);
+            }
+
+            // Verify we can read a frame
+            using var testFrame = new Mat();
+            if (_videoCapture.Read(testFrame) && !testFrame.Empty())
+            {
+                return true;
+            }
+
+            Console.WriteLine("Reconnected but couldn't read frame");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Reconnect failed: {ex.Message}");
+            return false;
         }
     }
 

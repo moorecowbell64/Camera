@@ -421,6 +421,7 @@ public partial class MainWindow : System.Windows.Window
             _recording.FrameCaptured += OnFrameCaptured;
             _recording.SegmentCreated += OnSegmentCreated;
             _recording.StatusChanged += OnRecordingStatusChanged;
+            _recording.StreamStatusChanged += OnStreamStatusChanged;
 
             // Apply saved recording folder from settings
             _recording.RecordingFolder = _settings.RecordingFolder;
@@ -509,6 +510,7 @@ public partial class MainWindow : System.Windows.Window
                 _recording.FrameCaptured -= OnFrameCaptured;
                 _recording.SegmentCreated -= OnSegmentCreated;
                 _recording.StatusChanged -= OnRecordingStatusChanged;
+                _recording.StreamStatusChanged -= OnStreamStatusChanged;
                 _recording.StopRecording();
                 _recording.StopStreaming();
                 _recording.Dispose();
@@ -1693,6 +1695,29 @@ public partial class MainWindow : System.Windows.Window
             if (status.IsRecording)
             {
                 RecordingSegmentInfo.Text = $"Segment {status.SegmentNumber} starting...";
+            }
+        });
+    }
+
+    private void OnStreamStatusChanged(object? sender, string status)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (status == "Connected")
+            {
+                UpdateConnectionStatus("Connected", Brushes.LimeGreen);
+            }
+            else if (status.Contains("Reconnecting"))
+            {
+                UpdateConnectionStatus(status, Brushes.Orange);
+            }
+            else if (status.Contains("lost") || status.Contains("exceeded"))
+            {
+                UpdateConnectionStatus(status, Brushes.Red);
+            }
+            else
+            {
+                UpdateConnectionStatus(status, Brushes.Orange);
             }
         });
     }
