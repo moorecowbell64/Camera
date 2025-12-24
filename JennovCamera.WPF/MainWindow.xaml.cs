@@ -1494,6 +1494,28 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private void OpenRecordingFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = _settings.RecordingFolder;
+            if (!string.IsNullOrEmpty(folder) && System.IO.Directory.Exists(folder))
+            {
+                System.Diagnostics.Process.Start("explorer.exe", folder);
+            }
+            else
+            {
+                MessageBox.Show("Recording folder does not exist.\nPlease select a valid folder first.",
+                    "Folder Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not open folder: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void RecordButton_Click(object sender, RoutedEventArgs e)
     {
         if (_recording == null) return;

@@ -361,6 +361,7 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="RecordingFolderText"
                                              IsReadOnly="True"
@@ -370,6 +371,10 @@
                                     <Button Grid.Column="1" Content="Browse"
                                             Click="BrowseRecordingFolder_Click"
                                             Width="60" Margin="5,0,0,0"/>
+                                    <Button Grid.Column="2" Content="Open"
+                                            Click="OpenRecordingFolder_Click"
+                                            Width="45" Margin="5,0,0,0"
+                                            ToolTip="Open recording folder in Explorer"/>
                                 </Grid>
                                 <Button x:Name="RecordButton"
                                         Content="Start Recording"
