@@ -97,13 +97,21 @@
                            VerticalAlignment="Center"
                            HorizontalAlignment="Center"/>
 
-                <TextBlock x:Name="StreamQualityStatus"
-                           Grid.Column="2"
-                           Text="Stream: --"
-                           Foreground="{StaticResource PrimaryBrush}"
-                           FontSize="14"
-                           VerticalAlignment="Center"
-                           Margin="0,0,20,0"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
+                    <TextBlock x:Name="StreamQualityStatus"
+                               Text="Stream: --"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               FontSize="14"
+                               VerticalAlignment="Center"/>
+                    <Button x:Name="QuickQualityToggle"
+                            Content="Toggle"
+                            Click="QuickQualityToggle_Click"
+                            FontSize="10"
+                            Padding="6,2"
+                            Margin="10,0,0,0"
+                            ToolTip="Toggle between 4K and SD quality"
+                            IsEnabled="False"/>
+                </StackPanel>
 
                 <TextBlock x:Name="RecordingStatus"
                            Grid.Column="3"
@@ -122,6 +130,24 @@
             <TabItem Header="Controls">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="5">
+
+                        <!-- Keyboard Shortcuts Info -->
+                        <Expander Header="Keyboard Shortcuts" Margin="0,0,0,10" IsExpanded="False"
+                                  Foreground="#888888">
+                            <Border Background="#252525" CornerRadius="3" Padding="10" Margin="0,5,0,0">
+                                <TextBlock Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap">
+                                    <Run FontWeight="Bold" Foreground="White">PTZ Control:</Run><LineBreak/>
+                                    Arrow Keys - Pan/Tilt<LineBreak/>
+                                    +/- Keys - Zoom In/Out<LineBreak/>
+                                    Space - Stop Movement<LineBreak/>
+                                    <LineBreak/>
+                                    <Run FontWeight="Bold" Foreground="White">Focus Control:</Run><LineBreak/>
+                                    W - Focus Near<LineBreak/>
+                                    S - Focus Far<LineBreak/>
+                                    F - Auto Focus
+                                </TextBlock>
+                            </Border>
+                        </Expander>
 
                         <!-- PTZ Controls -->
                         <GroupBox Header="PTZ Controls" x:Name="PTZControls" IsEnabled="False">

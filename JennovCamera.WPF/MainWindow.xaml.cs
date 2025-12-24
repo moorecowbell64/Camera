@@ -424,6 +424,7 @@ public partial class MainWindow : System.Windows.Window
             PresetsGroup.IsEnabled = true;
             RecordingGroup.IsEnabled = true;
             AudioGroup.IsEnabled = true;
+            QuickQualityToggle.IsEnabled = true;
 
             // Enable settings controls
             StreamSettingsGroup.IsEnabled = true;
@@ -502,6 +503,7 @@ public partial class MainWindow : System.Windows.Window
             RecordButton.Background = (Brush)Application.Current.Resources["PrimaryBrush"];
             RecordingSegmentInfo.Text = "30min segments, 10s overlap";
             AudioGroup.IsEnabled = false;
+            QuickQualityToggle.IsEnabled = false;
             AudioButton.Content = "Enable Audio";
             AudioStatusText.Text = "Audio: Disabled";
 
@@ -1666,6 +1668,30 @@ public partial class MainWindow : System.Windows.Window
         UpdateStreamQualityDisplay();
         MessageBox.Show($"Stream quality changed to {newQuality}",
             "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void QuickQualityToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recording == null) return;
+
+        // Toggle between Main (4K) and Sub (SD)
+        var currentQuality = _recording.CurrentQuality;
+        var newQuality = currentQuality == StreamQuality.Main ? StreamQuality.Sub : StreamQuality.Main;
+
+        if (_recording.IsStreaming)
+        {
+            _recording.StopStreaming();
+            _recording.SetStreamQuality(newQuality);
+            _recording.StartStreaming();
+        }
+        else
+        {
+            _recording.SetStreamQuality(newQuality);
+        }
+
+        // Update UI
+        StreamQualityCombo.SelectedIndex = newQuality == StreamQuality.Main ? 0 : 1;
+        UpdateStreamQualityDisplay();
     }
 
     private async void LoadEncoderSettings_Click(object sender, RoutedEventArgs e)
