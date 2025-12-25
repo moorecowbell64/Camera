@@ -724,13 +724,104 @@ public class OnvifClient : IDisposable
 
     /// <summary>
     /// Get RTSP URL for the specified stream quality
+    /// Uses Dahua format: /cam/realmonitor?channel=1&subtype=0|1
     /// </summary>
     /// <param name="quality">Main (4K) or Sub (480p) stream</param>
     public string GetRtspUrl(StreamQuality quality = StreamQuality.Main)
     {
+        var subtype = quality == StreamQuality.Main ? "0" : "1";
+        return $"rtsp://{_username}:{_password}@{_cameraIp}:554/cam/realmonitor?channel=1&subtype={subtype}";
+    }
+
+    /// <summary>
+    /// Get the legacy RTSP URL format (/stream1, /stream2)
+    /// </summary>
+    public string GetLegacyRtspUrl(StreamQuality quality = StreamQuality.Main)
+    {
         var streamNum = quality == StreamQuality.Main ? "1" : "2";
         return $"rtsp://{_username}:{_password}@{_cameraIp}:554/stream{streamNum}";
     }
+
+    #region CGI-based PTZ Control (Dahua compatible)
+
+    /// <summary>
+    /// PTZ control via CGI endpoint (alternative to ONVIF, may be more responsive)
+    /// Direction codes: Up, Down, Left, Right, LeftUp, LeftDown, RightUp, RightDown,
+    ///                  ZoomTele, ZoomWide, FocusNear, FocusFar
+    /// </summary>
+    public async Task<bool> CgiPtzStartAsync(string direction, int speed = 1)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/cgi-bin/ptz.cgi?action=start&channel=1&code={direction}&arg1=0&arg2={speed}&arg3=0";
+            var response = await _httpClient.GetAsync(url);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CGI PTZ start error: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Stop CGI PTZ movement
+    /// </summary>
+    public async Task<bool> CgiPtzStopAsync(string direction)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/cgi-bin/ptz.cgi?action=stop&channel=1&code={direction}";
+            var response = await _httpClient.GetAsync(url);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CGI PTZ stop error: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Go to preset via CGI
+    /// </summary>
+    public async Task<bool> CgiGotoPresetAsync(int presetNumber)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/cgi-bin/ptz.cgi?action=start&channel=1&code=GotoPreset&arg1={presetNumber}&arg2=0&arg3=0";
+            var response = await _httpClient.GetAsync(url);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CGI GotoPreset error: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Take snapshot via CGI endpoint
+    /// </summary>
+    public async Task<byte[]?> CgiSnapshotAsync()
+    {
+        try
+        {
+            var url = $"{_baseUrl}/cgi-bin/snapshot.cgi?channel=1";
+            var response = await _httpClient.GetAsync(url);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsByteArrayAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CGI Snapshot error: {ex.Message}");
+        }
+        return null;
+    }
+
+    #endregion
 
     /// <summary>
     /// Get alternative RTSP URLs to try if the default doesn't work

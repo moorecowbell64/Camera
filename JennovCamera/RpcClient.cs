@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -7,22 +9,31 @@ namespace JennovCamera;
 
 /// <summary>
 /// JSON-RPC client for direct camera API access (non-ONVIF features)
-/// Uses /IPC endpoint with HTTP Digest authentication
+/// Uses /IPC endpoint with Dahua MD5 challenge-response authentication
 /// </summary>
 public class RpcClient : IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
+    private readonly string _username;
+    private readonly string _password;
+    private string? _sessionId;
     private int _requestId;
+    private bool _isAuthenticated;
+
+    public bool IsAuthenticated => _isAuthenticated;
 
     public RpcClient(string cameraIp, string username, string password, int port = 80)
     {
         _baseUrl = $"http://{cameraIp}:{port}";
+        _username = username;
+        _password = password;
 
+        // Use cookie container for session management
         var handler = new HttpClientHandler
         {
-            Credentials = new NetworkCredential(username, password),
-            PreAuthenticate = true
+            CookieContainer = new CookieContainer(),
+            UseCookies = true
         };
 
         _httpClient = new HttpClient(handler)
@@ -32,21 +43,106 @@ public class RpcClient : IDisposable
     }
 
     /// <summary>
+    /// Authenticate using Dahua MD5 challenge-response
+    /// </summary>
+    public async Task<bool> LoginAsync()
+    {
+        try
+        {
+            // Step 1: Get challenge
+            var step1 = new
+            {
+                method = "global.login",
+                @params = new { userName = _username, password = "", clientType = "Web3.0" },
+                id = Interlocked.Increment(ref _requestId)
+            };
+
+            var response1 = await _httpClient.PostAsJsonAsync($"{_baseUrl}/RPC2_Login", step1);
+            var json1 = await response1.Content.ReadAsStringAsync();
+            var result1 = JsonSerializer.Deserialize<DahuaLoginResponse>(json1, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (result1?.Session == null || result1.Params == null)
+            {
+                Console.WriteLine("RPC Login Step 1 failed: No session returned");
+                return false;
+            }
+
+            _sessionId = result1.Session;
+            var realm = result1.Params.Realm ?? "Login to " + _baseUrl;
+            var random = result1.Params.Random ?? "";
+
+            // Step 2: Calculate MD5 hash
+            // hash1 = MD5(username:realm:password)
+            // hash2 = MD5(username:random:hash1)
+            var hash1 = CalculateMD5($"{_username}:{realm}:{_password}").ToUpper();
+            var hash2 = CalculateMD5($"{_username}:{random}:{hash1}").ToUpper();
+
+            // Step 3: Complete login
+            var step3 = new
+            {
+                method = "global.login",
+                session = _sessionId,
+                @params = new { userName = _username, password = hash2, clientType = "Web3.0" },
+                id = Interlocked.Increment(ref _requestId)
+            };
+
+            var response3 = await _httpClient.PostAsJsonAsync($"{_baseUrl}/RPC2_Login", step3);
+            var json3 = await response3.Content.ReadAsStringAsync();
+            var result3 = JsonSerializer.Deserialize<RpcResponse>(json3, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            _isAuthenticated = result3?.Result == true;
+            if (_isAuthenticated)
+            {
+                Console.WriteLine($"RPC authenticated successfully (session: {_sessionId})");
+            }
+            else
+            {
+                Console.WriteLine($"RPC authentication failed: {result3?.Error?.Message}");
+            }
+
+            return _isAuthenticated;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"RPC login error: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string CalculateMD5(string input)
+    {
+        var bytes = MD5.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(bytes);
+    }
+
+    /// <summary>
     /// Send an RPC request to the camera
     /// </summary>
     public async Task<RpcResponse> SendAsync(string method, object? parameters = null)
     {
-        var request = new RpcRequest
+        // Auto-login if not authenticated
+        if (!_isAuthenticated)
         {
-            Method = method,
-            Params = parameters,
-            Session = 0,
-            Id = Interlocked.Increment(ref _requestId)
+            await LoginAsync();
+        }
+
+        var request = new
+        {
+            method = method,
+            @params = parameters,
+            session = _sessionId ?? "0",
+            id = Interlocked.Increment(ref _requestId)
         };
 
         try
         {
-            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/IPC", request);
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/RPC2", request);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
@@ -239,6 +335,36 @@ public class RpcResponse
 
     [JsonPropertyName("error")]
     public RpcError? Error { get; set; }
+
+    [JsonPropertyName("session")]
+    public string? Session { get; set; }
+}
+
+public class DahuaLoginResponse
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("session")]
+    public string? Session { get; set; }
+
+    [JsonPropertyName("params")]
+    public DahuaLoginParams? Params { get; set; }
+
+    [JsonPropertyName("error")]
+    public RpcError? Error { get; set; }
+}
+
+public class DahuaLoginParams
+{
+    [JsonPropertyName("encryption")]
+    public string? Encryption { get; set; }
+
+    [JsonPropertyName("realm")]
+    public string? Realm { get; set; }
+
+    [JsonPropertyName("random")]
+    public string? Random { get; set; }
 }
 
 public class RpcError
