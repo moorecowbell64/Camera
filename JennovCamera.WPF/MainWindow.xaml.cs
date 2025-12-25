@@ -109,12 +109,25 @@ public partial class MainWindow : System.Windows.Window
     private class CalibrationSample
     {
         public CalibrationTarget Target { get; set; } = null!;
-        public double ErrorX { get; set; }
+        public double ErrorX { get; set; }       // Where target ended up (normalized)
         public double ErrorY { get; set; }
         public double ErrorDistance { get; set; }
+
+        // Separate pan/tilt analysis
+        public double PanError { get; set; }      // Error in horizontal direction only
+        public double TiltError { get; set; }     // Error in vertical direction only
+        public double SuggestedPanMultiplier { get; set; }
+        public double SuggestedTiltMultiplier { get; set; }
+
         public double SuggestedMultiplier { get; set; }
         public bool IsUndershoot { get; set; }
+        public bool IsPanUndershoot { get; set; }
+        public bool IsTiltUndershoot { get; set; }
     }
+
+    // Enhanced calibration profile
+    private CalibrationProfile _calibrationProfile = new();
+    private bool _isQuickCalibration;
 
     public MainWindow()
     {
@@ -131,6 +144,12 @@ public partial class MainWindow : System.Windows.Window
         _clickTravelMultiplier = _settings.ClickTravelMultiplier;
         TravelSlider.Value = _clickTravelMultiplier;
         TravelValueLabel.Text = $"{_clickTravelMultiplier:F0}";
+
+        // Load calibration profile
+        _calibrationProfile = _settings.Calibration ?? new CalibrationProfile();
+
+        // Update calibration display
+        UpdateCalibrationStatusDisplay();
 
         // Set default selections
         StreamQualityCombo.SelectedIndex = 0; // Main 4K
@@ -797,49 +816,80 @@ public partial class MainWindow : System.Windows.Window
     {
         if (_client == null) return;
 
-        // Calculate distance from center (0 to 1.414 for corners)
+        var absX = Math.Abs(normalizedX);
+        var absY = Math.Abs(normalizedY);
         var distance = Math.Sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
 
         // Skip if click is very close to center
         if (distance < 0.05) return;
 
-        // Calculate total movement duration based on distance
-        var totalDurationMs = (int)(distance * _clickTravelMultiplier);
+        // Use enhanced calibration profile for separate pan/tilt timing
+        var (panDurationMs, tiltDurationMs) = _calibrationProfile.CalculateMoveDuration(normalizedX, normalizedY);
+
+        // Fallback to legacy multiplier if profile not calibrated
+        if (_calibrationProfile.SampleCount == 0)
+        {
+            panDurationMs = (int)(absX * _clickTravelMultiplier);
+            tiltDurationMs = (int)(absY * _clickTravelMultiplier);
+        }
 
         // Calculate base direction
         var basePanDir = normalizedX > 0 ? 1.0f : -1.0f;
         var baseTiltDir = normalizedY > 0 ? 1.0f : -1.0f;
 
-        // Scale direction by component magnitude (so diagonal moves are balanced)
-        var absX = Math.Abs(normalizedX);
-        var absY = Math.Abs(normalizedY);
-        if (absX > 0.01) basePanDir *= (float)(absX / Math.Max(absX, absY));
-        if (absY > 0.01) baseTiltDir *= (float)(absY / Math.Max(absX, absY));
+        // Zero out small movements
+        if (absX < 0.05) basePanDir = 0;
+        if (absY < 0.05) baseTiltDir = 0;
 
-        // If one axis is very small, zero it out
-        if (Math.Abs(normalizedX) < 0.05) basePanDir = 0;
-        if (Math.Abs(normalizedY) < 0.05) baseTiltDir = 0;
+        // Calculate which axis takes longer
+        var maxDuration = Math.Max(panDurationMs, tiltDurationMs);
+        var minDuration = Math.Min(panDurationMs, tiltDurationMs);
 
-        // Deceleration curve: fast start, slow finish for accuracy
-        // Phase 1: 50% of duration at 100% speed
-        // Phase 2: 30% of duration at 50% speed
-        // Phase 3: 20% of duration at 20% speed
+        // Skip if durations too short
+        if (maxDuration < 30) return;
+
+        // Scale the faster axis to match timing (both start and end together)
+        float panSpeedScale = maxDuration > 0 ? (float)panDurationMs / maxDuration : 0;
+        float tiltSpeedScale = maxDuration > 0 ? (float)tiltDurationMs / maxDuration : 0;
+
+        // Deceleration curve based on calibration profile strength
+        var decelStrength = _calibrationProfile.DecelerationStrength;
+
+        // Enhanced multi-phase deceleration for smoother, more accurate movement
+        // Phase timing adapts based on calibration profile
         var phases = new (float speedMultiplier, double durationPercent)[]
         {
-            (1.0f, 0.50),   // Full speed for first 50%
-            (0.5f, 0.30),   // Half speed for next 30%
-            (0.2f, 0.20),   // Slow creep for final 20%
+            (1.0f, 0.35 + (1.0 - decelStrength) * 0.2),   // Full speed phase
+            (0.6f, 0.25),                                  // Medium speed
+            (0.3f, 0.20),                                  // Slow approach
+            (0.12f, 0.20 * decelStrength),                // Fine positioning (based on profile)
         };
 
-        foreach (var (speedMult, durationPct) in phases)
-        {
-            var phaseDuration = (int)(totalDurationMs * durationPct);
-            if (phaseDuration < 20) continue; // Skip very short phases
+        // Normalize phases
+        var totalPercent = phases.Sum(p => p.durationPercent);
+        var normalizedPhases = phases.Select(p => (p.speedMultiplier, p.durationPercent / totalPercent)).ToArray();
 
-            var panSpeed = basePanDir * speedMult;
-            var tiltSpeed = baseTiltDir * speedMult;
+        // Account for camera response delay at start
+        var responseDelay = (int)_calibrationProfile.ResponseDelay;
+
+        foreach (var (speedMult, durationPct) in normalizedPhases)
+        {
+            var phaseDuration = (int)(maxDuration * durationPct);
+            if (phaseDuration < 15) continue; // Skip very short phases
+
+            // Apply speed multiplier with axis scaling
+            var panSpeed = basePanDir * speedMult * panSpeedScale;
+            var tiltSpeed = baseTiltDir * speedMult * tiltSpeedScale;
 
             _client.Onvif.ContinuousMoveFast(panSpeed, tiltSpeed, 0);
+
+            // First phase accounts for response delay
+            if (responseDelay > 0)
+            {
+                phaseDuration = Math.Max(phaseDuration - responseDelay, 20);
+                responseDelay = 0;
+            }
+
             await Task.Delay(phaseDuration);
         }
 
@@ -883,7 +933,23 @@ public partial class MainWindow : System.Windows.Window
 
     // ===== Calibration System =====
 
+    private void QuickCalibration_Click(object sender, RoutedEventArgs e)
+    {
+        StartCalibration(isQuick: true);
+    }
+
+    private void FullCalibration_Click(object sender, RoutedEventArgs e)
+    {
+        StartCalibration(isQuick: false);
+    }
+
+    // Legacy handler - defaults to full calibration
     private void StartCalibration_Click(object sender, RoutedEventArgs e)
+    {
+        StartCalibration(isQuick: false);
+    }
+
+    private void StartCalibration(bool isQuick)
     {
         if (!_isConnected || _client == null)
         {
@@ -891,6 +957,7 @@ public partial class MainWindow : System.Windows.Window
             return;
         }
 
+        _isQuickCalibration = isQuick;
         _isCalibrating = true;
         _calibrationStep = 0;
         _calibrationPhase = 0;
@@ -899,8 +966,10 @@ public partial class MainWindow : System.Windows.Window
 
         // Show calibration overlay
         CalibrationOverlay.Visibility = Visibility.Visible;
+
+        var modeText = isQuick ? "QUICK CALIBRATION (4 targets)" : "FULL CALIBRATION (16 targets)";
         CalibrationInstructions.Text =
-            "CALIBRATION\n\n" +
+            $"{modeText}\n\n" +
             "1. Click YELLOW target\n" +
             "2. Camera moves\n" +
             "3. Click where that spot\n" +
@@ -915,17 +984,59 @@ public partial class MainWindow : System.Windows.Window
         }));
     }
 
+    private void UpdateCalibrationStatusDisplay()
+    {
+        if (_calibrationProfile.SampleCount > 0)
+        {
+            CalibrationStatusText.Text = _calibrationProfile.GetQualityDescription();
+            CalibrationStatusText.Foreground = _calibrationProfile.AverageError switch
+            {
+                < 0.05 => Brushes.LimeGreen,
+                < 0.10 => Brushes.Yellow,
+                < 0.20 => Brushes.Orange,
+                _ => Brushes.Red
+            };
+            PanMultiplierText.Text = $"{_calibrationProfile.PanMultiplier:F0}";
+            TiltMultiplierText.Text = $"{_calibrationProfile.TiltMultiplier:F0}";
+        }
+        else
+        {
+            CalibrationStatusText.Text = "Not calibrated";
+            CalibrationStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(136, 136, 136));
+            PanMultiplierText.Text = $"{_clickTravelMultiplier:F0}";
+            TiltMultiplierText.Text = $"{_clickTravelMultiplier:F0}";
+        }
+    }
+
+    private CalibrationTarget[] GetActiveCalibrationTargets()
+    {
+        if (_isQuickCalibration)
+        {
+            // Quick mode: only 4 cardinal directions at mid distance
+            return new[]
+            {
+                new CalibrationTarget(0.55, 0, "Mid-Right", 0.55, "Right"),
+                new CalibrationTarget(-0.55, 0, "Mid-Left", 0.55, "Left"),
+                new CalibrationTarget(0, 0.55, "Mid-Up", 0.55, "Up"),
+                new CalibrationTarget(0, -0.55, "Mid-Down", 0.55, "Down"),
+            };
+        }
+        return _calibrationTargets;
+    }
+
     private void UpdateCalibrationDisplay()
     {
         CalibrationCanvas.Children.Clear();
 
-        if (_calibrationStep >= _calibrationTargets.Length)
+        var activeTargets = GetActiveCalibrationTargets();
+
+        if (_calibrationStep >= activeTargets.Length)
         {
             FinishCalibration();
             return;
         }
 
-        _currentTarget = _calibrationTargets[_calibrationStep];
+        _currentTarget = activeTargets[_calibrationStep];
         var canvas = CalibrationCanvas;
         var centerX = canvas.ActualWidth / 2;
         var centerY = canvas.ActualHeight / 2;
@@ -940,13 +1051,14 @@ public partial class MainWindow : System.Windows.Window
             return;
         }
 
-        // Draw distance rings for reference
-        DrawDistanceRings(canvas, centerX, centerY);
+        // Draw distance rings for reference (only for full calibration)
+        if (!_isQuickCalibration)
+            DrawDistanceRings(canvas, centerX, centerY);
 
         // Draw all targets
-        for (int i = 0; i < _calibrationTargets.Length; i++)
+        for (int i = 0; i < activeTargets.Length; i++)
         {
-            var t = _calibrationTargets[i];
+            var t = activeTargets[i];
             var isActive = i == _calibrationStep;
             var isCompleted = i < _calibrationStep;
             DrawCalibrationTarget(t.X, t.Y, t.Name, isActive, isCompleted, t.Distance);
@@ -956,20 +1068,19 @@ public partial class MainWindow : System.Windows.Window
         DrawCenterCrosshair();
 
         // Draw progress bar
-        DrawProgressBar(canvas);
+        DrawProgressBar(canvas, activeTargets.Length);
 
         // Update status text
         var distanceLabel = _currentTarget.Distance switch
         {
-            0.3 => "NEAR",
-            0.55 => "MID",
-            0.8 => "FAR",
-            _ => ""
+            < 0.4 => "NEAR",
+            > 0.65 => "FAR",
+            _ => "MID"
         };
 
         if (_calibrationPhase == 0)
         {
-            CalibrationStepText.Text = $"[{_calibrationStep + 1}/{_calibrationTargets.Length}] Click the YELLOW {distanceLabel} {_currentTarget.Direction} target";
+            CalibrationStepText.Text = $"[{_calibrationStep + 1}/{activeTargets.Length}] Click the YELLOW {distanceLabel} {_currentTarget.Direction} target";
         }
         else
         {
@@ -1012,10 +1123,10 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
-    private void DrawProgressBar(Canvas canvas)
+    private void DrawProgressBar(Canvas canvas, int totalTargets)
     {
         var width = canvas.ActualWidth - 40;
-        var progress = (double)_calibrationStep / _calibrationTargets.Length;
+        var progress = (double)_calibrationStep / totalTargets;
 
         // Background
         var bg = new System.Windows.Shapes.Rectangle
@@ -1218,12 +1329,50 @@ public partial class MainWindow : System.Windows.Window
 
             var errorDistance = Math.Sqrt(clickNormX * clickNormX + clickNormY * clickNormY);
             var targetDistance = Math.Sqrt(_currentTarget.X * _currentTarget.X + _currentTarget.Y * _currentTarget.Y);
+            var targetAbsX = Math.Abs(_currentTarget.X);
+            var targetAbsY = Math.Abs(_currentTarget.Y);
 
-            // Determine if undershoot or overshoot
+            // Calculate separate pan/tilt errors
+            // Pan error: how far off in horizontal direction (positive = undershot, negative = overshot)
+            var panError = clickNormX * Math.Sign(_currentTarget.X);  // Error in target direction
+            var tiltError = clickNormY * Math.Sign(_currentTarget.Y);
+
+            // Determine undershoot/overshoot for each axis
+            var isPanUndershoot = panError > 0.02 && Math.Sign(clickNormX) == Math.Sign(_currentTarget.X);
+            var isTiltUndershoot = tiltError > 0.02 && Math.Sign(clickNormY) == Math.Sign(_currentTarget.Y);
+
+            // Calculate suggested multipliers for each axis
+            var currentPanMult = _calibrationProfile.SampleCount > 0 ? _calibrationProfile.PanMultiplier : _clickTravelMultiplier;
+            var currentTiltMult = _calibrationProfile.SampleCount > 0 ? _calibrationProfile.TiltMultiplier : _clickTravelMultiplier;
+
+            double suggestedPanMult = currentPanMult;
+            double suggestedTiltMult = currentTiltMult;
+
+            // Pan axis calculation
+            if (targetAbsX > 0.05)
+            {
+                var panTraveled = targetAbsX - Math.Abs(panError);
+                if (isPanUndershoot && panTraveled > 0.01)
+                    suggestedPanMult = currentPanMult * (targetAbsX / panTraveled);
+                else if (!isPanUndershoot && panError < -0.02)
+                    suggestedPanMult = currentPanMult * (targetAbsX / (targetAbsX + Math.Abs(panError)));
+            }
+
+            // Tilt axis calculation
+            if (targetAbsY > 0.05)
+            {
+                var tiltTraveled = targetAbsY - Math.Abs(tiltError);
+                if (isTiltUndershoot && tiltTraveled > 0.01)
+                    suggestedTiltMult = currentTiltMult * (targetAbsY / tiltTraveled);
+                else if (!isTiltUndershoot && tiltError < -0.02)
+                    suggestedTiltMult = currentTiltMult * (targetAbsY / (targetAbsY + Math.Abs(tiltError)));
+            }
+
+            // Overall legacy calculation
             var sameDirection = (clickNormX * _currentTarget.X >= 0) || (clickNormY * _currentTarget.Y >= 0);
             var isUndershoot = sameDirection && errorDistance > 0.02;
 
-            double suggestedMultiplier;
+            double suggestedMultiplier = _clickTravelMultiplier;
             if (errorDistance < 0.05)
             {
                 suggestedMultiplier = _clickTravelMultiplier;
@@ -1242,8 +1391,10 @@ public partial class MainWindow : System.Windows.Window
                 suggestedMultiplier = _clickTravelMultiplier * (targetDistance / traveledDistance);
             }
 
-            // Clamp to reasonable range
+            // Clamp to reasonable ranges
             suggestedMultiplier = Math.Clamp(suggestedMultiplier, 500, 5000);
+            suggestedPanMult = Math.Clamp(suggestedPanMult, 500, 5000);
+            suggestedTiltMult = Math.Clamp(suggestedTiltMult, 500, 5000);
 
             _calibrationSamples.Add(new CalibrationSample
             {
@@ -1251,8 +1402,14 @@ public partial class MainWindow : System.Windows.Window
                 ErrorX = clickNormX,
                 ErrorY = clickNormY,
                 ErrorDistance = errorDistance,
+                PanError = panError,
+                TiltError = tiltError,
+                SuggestedPanMultiplier = suggestedPanMult,
+                SuggestedTiltMultiplier = suggestedTiltMult,
                 SuggestedMultiplier = suggestedMultiplier,
-                IsUndershoot = isUndershoot
+                IsUndershoot = isUndershoot,
+                IsPanUndershoot = isPanUndershoot,
+                IsTiltUndershoot = isTiltUndershoot
             });
 
             // Next target
@@ -1273,70 +1430,125 @@ public partial class MainWindow : System.Windows.Window
             return;
         }
 
-        // Comprehensive analysis
-        var avgMultiplier = _calibrationSamples.Average(s => s.SuggestedMultiplier);
-        var stdDev = Math.Sqrt(_calibrationSamples.Average(s => Math.Pow(s.SuggestedMultiplier - avgMultiplier, 2)));
+        // ===== Enhanced Analysis with Separate Pan/Tilt =====
 
-        // Analyze by distance
+        // Separate samples by primary axis (only use samples where that axis was dominant)
+        var panDominant = _calibrationSamples.Where(s => Math.Abs(s.Target.X) > Math.Abs(s.Target.Y) * 1.5).ToList();
+        var tiltDominant = _calibrationSamples.Where(s => Math.Abs(s.Target.Y) > Math.Abs(s.Target.X) * 1.5).ToList();
+
+        // Calculate weighted average pan/tilt multipliers
+        double avgPanMult, avgTiltMult;
+        if (panDominant.Count > 0)
+            avgPanMult = panDominant.Average(s => s.SuggestedPanMultiplier);
+        else
+            avgPanMult = _calibrationSamples.Average(s => s.SuggestedPanMultiplier);
+
+        if (tiltDominant.Count > 0)
+            avgTiltMult = tiltDominant.Average(s => s.SuggestedTiltMultiplier);
+        else
+            avgTiltMult = _calibrationSamples.Average(s => s.SuggestedTiltMultiplier);
+
+        // ===== Distance Factor Analysis =====
         var nearSamples = _calibrationSamples.Where(s => s.Target.Distance < 0.4).ToList();
         var midSamples = _calibrationSamples.Where(s => s.Target.Distance >= 0.4 && s.Target.Distance < 0.7).ToList();
         var farSamples = _calibrationSamples.Where(s => s.Target.Distance >= 0.7).ToList();
 
-        var nearAvg = nearSamples.Any() ? nearSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
-        var midAvg = midSamples.Any() ? midSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
-        var farAvg = farSamples.Any() ? farSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+        // Calculate base multiplier (from mid samples as reference)
+        var baseMult = midSamples.Any() ? midSamples.Average(s => s.SuggestedMultiplier) : _calibrationSamples.Average(s => s.SuggestedMultiplier);
 
-        // Analyze by axis
-        var panSamples = _calibrationSamples.Where(s => Math.Abs(s.Target.X) > Math.Abs(s.Target.Y)).ToList();
-        var tiltSamples = _calibrationSamples.Where(s => Math.Abs(s.Target.Y) > Math.Abs(s.Target.X)).ToList();
+        // Calculate distance correction factors relative to mid
+        double nearFactor = 1.0, midFactor = 1.0, farFactor = 1.0;
+        if (nearSamples.Any() && baseMult > 0)
+        {
+            var nearAvg = nearSamples.Average(s => s.SuggestedMultiplier);
+            nearFactor = nearAvg / baseMult;
+        }
+        if (farSamples.Any() && baseMult > 0)
+        {
+            var farAvg = farSamples.Average(s => s.SuggestedMultiplier);
+            farFactor = farAvg / baseMult;
+        }
 
-        var panAvg = panSamples.Any() ? panSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
-        var tiltAvg = tiltSamples.Any() ? tiltSamples.Average(s => s.SuggestedMultiplier) : avgMultiplier;
+        // Clamp factors to reasonable range
+        nearFactor = Math.Clamp(nearFactor, 0.5, 1.5);
+        farFactor = Math.Clamp(farFactor, 0.5, 1.5);
 
-        // Count accuracy
-        var perfectCount = _calibrationSamples.Count(s => s.ErrorDistance < 0.05);
-        var undershootCount = _calibrationSamples.Count(s => s.IsUndershoot);
-        var overshootCount = _calibrationSamples.Count - perfectCount - undershootCount;
-
+        // ===== Error Analysis =====
         var avgError = _calibrationSamples.Average(s => s.ErrorDistance);
+        var perfectCount = _calibrationSamples.Count(s => s.ErrorDistance < 0.05);
+        var goodCount = _calibrationSamples.Count(s => s.ErrorDistance >= 0.05 && s.ErrorDistance < 0.15);
+        var poorCount = _calibrationSamples.Count(s => s.ErrorDistance >= 0.15);
 
-        var report = $"CALIBRATION ANALYSIS\n" +
-            $"═══════════════════════════════\n\n" +
-            $"Samples: {_calibrationSamples.Count}\n" +
-            $"Perfect (< 5% error): {perfectCount}\n" +
-            $"Undershoot: {undershootCount}  |  Overshoot: {overshootCount}\n" +
-            $"Average error: {avgError * 100:F1}%\n\n" +
-            $"BY DISTANCE:\n" +
-            $"  Near (0.3):  {nearAvg:F0}\n" +
-            $"  Mid (0.55):  {midAvg:F0}\n" +
-            $"  Far (0.8):   {farAvg:F0}\n\n" +
-            $"BY AXIS:\n" +
-            $"  Pan (H):  {panAvg:F0}\n" +
-            $"  Tilt (V): {tiltAvg:F0}\n\n" +
-            $"RECOMMENDED:\n" +
-            $"  Overall: {avgMultiplier:F0} (±{stdDev:F0})\n" +
-            $"  Current: {_clickTravelMultiplier:F0}\n\n" +
-            $"Apply recommended value?";
+        var panUndershootCount = _calibrationSamples.Count(s => s.IsPanUndershoot);
+        var tiltUndershootCount = _calibrationSamples.Count(s => s.IsTiltUndershoot);
+
+        // ===== Build Report =====
+        var qualityDesc = avgError switch
+        {
+            < 0.05 => "EXCELLENT",
+            < 0.10 => "GOOD",
+            < 0.20 => "FAIR",
+            _ => "NEEDS IMPROVEMENT"
+        };
+
+        var report = $"ENHANCED CALIBRATION ANALYSIS\n" +
+            $"═══════════════════════════════════\n\n" +
+            $"Quality: {qualityDesc}\n" +
+            $"Average Error: {avgError * 100:F1}%\n" +
+            $"Samples: {_calibrationSamples.Count} ({perfectCount} perfect, {goodCount} good, {poorCount} poor)\n\n" +
+            $"AXIS MULTIPLIERS:\n" +
+            $"  Pan (horizontal):  {avgPanMult:F0} ms/unit\n" +
+            $"  Tilt (vertical):   {avgTiltMult:F0} ms/unit\n" +
+            $"  Ratio (Pan/Tilt):  {avgPanMult / avgTiltMult:F2}\n\n" +
+            $"DISTANCE FACTORS:\n" +
+            $"  Near (< 0.35):  {nearFactor:F2}x\n" +
+            $"  Mid (0.35-0.65): {midFactor:F2}x (reference)\n" +
+            $"  Far (> 0.65):   {farFactor:F2}x\n\n" +
+            $"BIAS:\n" +
+            $"  Pan undershoots:  {panUndershootCount}/{_calibrationSamples.Count}\n" +
+            $"  Tilt undershoots: {tiltUndershootCount}/{_calibrationSamples.Count}\n\n" +
+            $"Apply enhanced calibration profile?";
 
         var result = MessageBox.Show(report, "Calibration Results", MessageBoxButton.YesNo, MessageBoxImage.Information);
 
         if (result == MessageBoxResult.Yes)
         {
+            // Update enhanced calibration profile
+            _calibrationProfile.PanMultiplier = avgPanMult;
+            _calibrationProfile.TiltMultiplier = avgTiltMult;
+            _calibrationProfile.NearFactor = nearFactor;
+            _calibrationProfile.MidFactor = midFactor;
+            _calibrationProfile.FarFactor = farFactor;
+            _calibrationProfile.SampleCount = _calibrationSamples.Count;
+            _calibrationProfile.AverageError = avgError;
+            _calibrationProfile.LastCalibrated = DateTime.Now;
+
+            // Also update legacy multiplier for backward compatibility
+            var avgMultiplier = (avgPanMult + avgTiltMult) / 2;
             _clickTravelMultiplier = avgMultiplier;
             TravelSlider.Value = Math.Clamp(avgMultiplier, TravelSlider.Minimum, TravelSlider.Maximum);
             TravelValueLabel.Text = $"{avgMultiplier:F0}";
 
             // Expand slider range if needed
             if (avgMultiplier > TravelSlider.Maximum)
-            {
                 TravelSlider.Maximum = avgMultiplier + 500;
-                TravelSlider.Value = avgMultiplier;
-            }
-            else if (avgMultiplier < TravelSlider.Minimum)
-            {
+            if (avgMultiplier < TravelSlider.Minimum)
                 TravelSlider.Minimum = avgMultiplier - 200;
-                TravelSlider.Value = avgMultiplier;
-            }
+
+            // Save to settings
+            _settings.Calibration = _calibrationProfile;
+            _settings.ClickTravelMultiplier = _clickTravelMultiplier;
+            _settings.Save();
+
+            // Update UI display
+            UpdateCalibrationStatusDisplay();
+
+            MessageBox.Show(
+                $"Calibration profile saved!\n\n" +
+                $"Pan: {avgPanMult:F0} ms/unit\n" +
+                $"Tilt: {avgTiltMult:F0} ms/unit\n" +
+                $"Quality: {_calibrationProfile.GetQualityDescription()}",
+                "Calibration Applied", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 
