@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
@@ -27,6 +28,10 @@ public partial class MainWindow : System.Windows.Window
 
     // PTZ movement tracking
     private bool _isPtzActive;
+
+    // Connection overlay animation
+    private DispatcherTimer? _spinnerTimer;
+    private double _spinnerAngle;
 
     // Click-to-center tracking
     private DateTime _lastClickTime = DateTime.MinValue;
@@ -384,6 +389,159 @@ public partial class MainWindow : System.Windows.Window
 
     #endregion
 
+    #region Connection Progress Overlay
+
+    private void ShowConnectionOverlay(string ip)
+    {
+        // Reset all steps to pending state
+        ResetConnectionSteps();
+
+        // Set target IP
+        ConnectionTargetText.Text = ip;
+        ConnectionActionText.Text = "Initializing connection...";
+
+        // Show overlay
+        ConnectionOverlay.Visibility = Visibility.Visible;
+
+        // Start spinner animation
+        _spinnerAngle = 0;
+        _spinnerTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+        _spinnerTimer.Tick += (s, e) =>
+        {
+            _spinnerAngle = (_spinnerAngle + 8) % 360;
+            SpinnerRotation.Angle = _spinnerAngle;
+        };
+        _spinnerTimer.Start();
+
+        // Set progress bar to 0
+        AnimateProgressBar(0);
+    }
+
+    private void HideConnectionOverlay()
+    {
+        // Stop spinner
+        _spinnerTimer?.Stop();
+        _spinnerTimer = null;
+
+        // Hide overlay
+        ConnectionOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void ResetConnectionSteps()
+    {
+        var pendingColor = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+        var textColor = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+
+        Step1Icon.Text = "○"; Step1Icon.Foreground = pendingColor;
+        Step1Text.Foreground = textColor; Step1Text.Text = "Authenticating...";
+
+        Step2Icon.Text = "○"; Step2Icon.Foreground = pendingColor;
+        Step2Text.Foreground = pendingColor; Step2Text.Text = "Initializing PTZ control...";
+
+        Step3Icon.Text = "○"; Step3Icon.Foreground = pendingColor;
+        Step3Text.Foreground = pendingColor; Step3Text.Text = "Detecting video streams...";
+
+        Step4Icon.Text = "○"; Step4Icon.Foreground = pendingColor;
+        Step4Text.Foreground = pendingColor; Step4Text.Text = "Starting video stream...";
+
+        Step5Icon.Text = "○"; Step5Icon.Foreground = pendingColor;
+        Step5Text.Foreground = pendingColor; Step5Text.Text = "Loading device info...";
+    }
+
+    private void SetConnectionStep(int step, string status, bool isActive = true, bool isComplete = false, bool isFailed = false)
+    {
+        var activeColor = (Brush)Application.Current.Resources["PrimaryBrush"];
+        var completeColor = new SolidColorBrush(Color.FromRgb(0x00, 0xD4, 0xAA));
+        var failedColor = new SolidColorBrush(Color.FromRgb(0xFF, 0x44, 0x44));
+        var textActiveColor = Brushes.White;
+        var textCompleteColor = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
+
+        TextBlock icon, text;
+        switch (step)
+        {
+            case 1: icon = Step1Icon; text = Step1Text; break;
+            case 2: icon = Step2Icon; text = Step2Text; break;
+            case 3: icon = Step3Icon; text = Step3Text; break;
+            case 4: icon = Step4Icon; text = Step4Text; break;
+            case 5: icon = Step5Icon; text = Step5Text; break;
+            default: return;
+        }
+
+        if (isFailed)
+        {
+            icon.Text = "✕";
+            icon.Foreground = failedColor;
+            text.Foreground = failedColor;
+        }
+        else if (isComplete)
+        {
+            icon.Text = "✓";
+            icon.Foreground = completeColor;
+            text.Foreground = textCompleteColor;
+        }
+        else if (isActive)
+        {
+            icon.Text = "●";
+            icon.Foreground = activeColor;
+            text.Foreground = textActiveColor;
+        }
+
+        text.Text = status;
+        ConnectionActionText.Text = status;
+
+        // Update progress bar
+        var progress = isComplete ? step * 20 : (step - 1) * 20 + 10;
+        AnimateProgressBar(progress);
+    }
+
+    private void AnimateProgressBar(double targetPercent)
+    {
+        var totalWidth = ConnectionProgressBar.Parent is Grid parent ? parent.ActualWidth : 320;
+        if (totalWidth <= 0) totalWidth = 320;
+
+        var targetWidth = totalWidth * (targetPercent / 100.0);
+
+        var animation = new DoubleAnimation
+        {
+            To = targetWidth,
+            Duration = TimeSpan.FromMilliseconds(300),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        ConnectionProgressBar.BeginAnimation(WidthProperty, animation);
+    }
+
+    private void ShowConnectionSuccess()
+    {
+        ConnectionActionText.Text = "Connected successfully!";
+        AnimateProgressBar(100);
+
+        // Brief delay then hide
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            HideConnectionOverlay();
+        };
+        timer.Start();
+    }
+
+    private void ShowConnectionFailed(string error)
+    {
+        ConnectionActionText.Text = $"Connection failed: {error}";
+
+        // Keep visible longer for error
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            HideConnectionOverlay();
+        };
+        timer.Start();
+    }
+
+    #endregion
+
     private async Task ConnectAsync()
     {
         try
@@ -421,19 +579,33 @@ public partial class MainWindow : System.Windows.Window
                 return;
             }
 
+            // Show connection overlay
+            ShowConnectionOverlay(ip);
             UpdateConnectionStatus("Connecting...", Brushes.Orange);
             ConnectButton.IsEnabled = false;
+
+            // Step 1: Authentication
+            SetConnectionStep(1, "Authenticating with camera...");
+            await Task.Delay(100); // Allow UI to update
 
             _client = new CameraClient(ip, 80);
 
             if (!await _client.LoginAsync(username, password))
             {
+                SetConnectionStep(1, "Authentication failed", isFailed: true);
+                ShowConnectionFailed("Invalid credentials");
                 MessageBox.Show("Failed to connect to camera. Check credentials and IP.",
                     "Connection Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateConnectionStatus("Connection Failed", Brushes.Red);
                 ConnectButton.IsEnabled = true;
                 return;
             }
+
+            SetConnectionStep(1, "Authenticated", isComplete: true);
+
+            // Step 2: ONVIF/PTZ
+            SetConnectionStep(2, "Initializing PTZ control...");
+            await Task.Delay(50);
 
             _ptz = new PTZController(_client);
             _recording = new RecordingManager(_client, StreamQuality.Main);
@@ -449,22 +621,36 @@ public partial class MainWindow : System.Windows.Window
             _deviceManager = new DeviceManager(ip, username, password, 80);
 
             // Warm up ONVIF connection for faster PTZ response
-            UpdateConnectionStatus("Warming up PTZ...", Brushes.Orange);
             await _client.Onvif.WarmUpConnectionAsync();
+            SetConnectionStep(2, "PTZ initialized", isComplete: true);
 
-            // Auto-detect best RTSP URL for highest resolution
-            UpdateConnectionStatus("Detecting streams...", Brushes.Orange);
+            // Step 3: Stream Detection
+            SetConnectionStep(3, "Detecting video streams...");
+            await Task.Delay(50);
+
             _recording.AutoDetectBestRtspUrl();
-
-            // Update stream quality display
             UpdateStreamQualityDisplay();
 
-            // Start video streaming
+            var streamInfo = _recording.CurrentQuality == StreamQuality.Main ? "4K stream detected" : "Stream detected";
+            SetConnectionStep(3, streamInfo, isComplete: true);
+
+            // Step 4: Video Streaming
+            SetConnectionStep(4, "Starting video stream...");
+            await Task.Delay(50);
+
             if (!_recording.StartStreaming())
             {
+                SetConnectionStep(4, "Video stream failed", isFailed: true);
                 MessageBox.Show("Connected but failed to start video stream.",
                     "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            else
+            {
+                SetConnectionStep(4, "Video streaming", isComplete: true);
+            }
+
+            // Step 5: Device Info
+            SetConnectionStep(5, "Loading device info...");
 
             _isConnected = true;
             NoVideoText.Visibility = Visibility.Collapsed;
@@ -529,9 +715,15 @@ public partial class MainWindow : System.Windows.Window
 
             // Load device info
             await LoadDeviceInfoAsync();
+            SetConnectionStep(5, "Device info loaded", isComplete: true);
+
+            // Show success and hide overlay
+            ShowConnectionSuccess();
         }
         catch (Exception ex)
         {
+            SetConnectionStep(1, "Connection error", isFailed: true);
+            ShowConnectionFailed(ex.Message);
             MessageBox.Show($"Connection error: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             UpdateConnectionStatus("Error", Brushes.Red);

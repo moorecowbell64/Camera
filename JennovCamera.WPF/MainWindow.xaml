@@ -69,6 +69,149 @@
                                    Padding="10"
                                    Background="#CC333333"/>
                     </Grid>
+
+                    <!-- Connection Progress Overlay -->
+                    <Grid x:Name="ConnectionOverlay" Visibility="Collapsed">
+                        <Rectangle Fill="#E0000000"/>
+                        <Border Background="#FF1E1E1E"
+                                BorderBrush="{StaticResource PrimaryBrush}"
+                                BorderThickness="2"
+                                CornerRadius="15"
+                                Padding="40,30"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                MinWidth="400">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#00D4AA" BlurRadius="30" ShadowDepth="0" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- Header with animated spinner -->
+                                <Grid Margin="0,0,0,25">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Spinning ring -->
+                                    <Grid Width="50" Height="50" Margin="0,0,20,0">
+                                        <Ellipse Stroke="#333333" StrokeThickness="4"/>
+                                        <Ellipse x:Name="SpinnerRing"
+                                                 Stroke="{StaticResource PrimaryBrush}"
+                                                 StrokeThickness="4"
+                                                 StrokeDashArray="2 4"
+                                                 RenderTransformOrigin="0.5,0.5">
+                                            <Ellipse.RenderTransform>
+                                                <RotateTransform x:Name="SpinnerRotation" Angle="0"/>
+                                            </Ellipse.RenderTransform>
+                                        </Ellipse>
+                                    </Grid>
+
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="CONNECTING TO CAMERA"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   FontSize="18"
+                                                   FontWeight="Bold"/>
+                                        <TextBlock x:Name="ConnectionTargetText"
+                                                   Text="192.168.50.224"
+                                                   Foreground="#888888"
+                                                   FontSize="13"
+                                                   Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Connection Steps -->
+                                <StackPanel x:Name="ConnectionStepsPanel" Margin="10,0,0,0">
+                                    <!-- Step 1: Authentication -->
+                                    <Grid x:Name="Step1Grid" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="30"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="Step1Icon" Text="○" FontSize="16"
+                                                   Foreground="#555555" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="Step1Text" Grid.Column="1"
+                                                   Text="Authenticating..."
+                                                   Foreground="#888888" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <!-- Step 2: ONVIF -->
+                                    <Grid x:Name="Step2Grid" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="30"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="Step2Icon" Text="○" FontSize="16"
+                                                   Foreground="#555555" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="Step2Text" Grid.Column="1"
+                                                   Text="Initializing PTZ control..."
+                                                   Foreground="#555555" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <!-- Step 3: Streams -->
+                                    <Grid x:Name="Step3Grid" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="30"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="Step3Icon" Text="○" FontSize="16"
+                                                   Foreground="#555555" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="Step3Text" Grid.Column="1"
+                                                   Text="Detecting video streams..."
+                                                   Foreground="#555555" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <!-- Step 4: Video -->
+                                    <Grid x:Name="Step4Grid" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="30"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="Step4Icon" Text="○" FontSize="16"
+                                                   Foreground="#555555" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="Step4Text" Grid.Column="1"
+                                                   Text="Starting video stream..."
+                                                   Foreground="#555555" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <!-- Step 5: Info -->
+                                    <Grid x:Name="Step5Grid" Margin="0,0,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="30"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="Step5Icon" Text="○" FontSize="16"
+                                                   Foreground="#555555" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="Step5Text" Grid.Column="1"
+                                                   Text="Loading device info..."
+                                                   Foreground="#555555" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- Progress bar -->
+                                <Grid Margin="0,25,0,0">
+                                    <Border Background="#333333" CornerRadius="3" Height="6"/>
+                                    <Border x:Name="ConnectionProgressBar"
+                                            Background="{StaticResource PrimaryBrush}"
+                                            CornerRadius="3" Height="6"
+                                            HorizontalAlignment="Left" Width="0"/>
+                                </Grid>
+
+                                <!-- Current action text -->
+                                <TextBlock x:Name="ConnectionActionText"
+                                           Text="Please wait..."
+                                           Foreground="#AAAAAA"
+                                           FontSize="12"
+                                           FontStyle="Italic"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,15,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </Grid>
             </Border>
 
