@@ -569,6 +569,45 @@ public class RecordingManager : IDisposable
     }
 
     /// <summary>
+    /// Wake up an external HDD by writing a small file to it.
+    /// External drives often sleep to save power and need time to spin up.
+    /// </summary>
+    private static void WakeUpDrive(string folder)
+    {
+        try
+        {
+            var wakeFile = Path.Combine(folder, ".wake_drive_temp");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            Console.WriteLine("Waking up drive...");
+
+            // Write a small file to trigger drive spin-up
+            File.WriteAllText(wakeFile, $"Wake up: {DateTime.Now}");
+
+            // Read it back to ensure drive is fully ready
+            File.ReadAllText(wakeFile);
+
+            // Clean up
+            File.Delete(wakeFile);
+
+            stopwatch.Stop();
+            if (stopwatch.ElapsedMilliseconds > 500)
+            {
+                Console.WriteLine($"Drive wake-up took {stopwatch.ElapsedMilliseconds}ms (was likely sleeping)");
+            }
+            else
+            {
+                Console.WriteLine($"Drive ready ({stopwatch.ElapsedMilliseconds}ms)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Drive wake-up warning: {ex.Message}");
+            // Don't fail - the actual recording will report any real errors
+        }
+    }
+
+    /// <summary>
     /// Check if there's enough disk space for recording (minimum 5 GB recommended)
     /// </summary>
     public static bool HasSufficientDiskSpace(string folder, long minimumBytes = 5L * 1024 * 1024 * 1024)
@@ -642,6 +681,9 @@ public class RecordingManager : IDisposable
             {
                 Directory.CreateDirectory(_recordingFolder);
             }
+
+            // Wake up external HDD if it's sleeping (spin-up can take a few seconds)
+            WakeUpDrive(_recordingFolder);
 
             // Check disk space (minimum 5 GB for 4K recording)
             var availableSpace = GetAvailableDiskSpace(_recordingFolder);
