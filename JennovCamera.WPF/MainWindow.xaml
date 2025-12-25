@@ -529,6 +529,73 @@
                             </StackPanel>
                         </GroupBox>
 
+                        <!-- Image Settings (via RPC) -->
+                        <GroupBox Header="Image Settings" x:Name="ImageSettingsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="70"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="35"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Content="Brightness:" FontSize="11"/>
+                                    <Slider x:Name="BrightnessSlider" Grid.Row="0" Grid.Column="1"
+                                            Minimum="0" Maximum="100" Value="50"
+                                            ValueChanged="ImageSlider_ValueChanged" Tag="Brightness"/>
+                                    <TextBlock x:Name="BrightnessValue" Grid.Row="0" Grid.Column="2"
+                                               Text="50" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
+
+                                    <Label Grid.Row="1" Content="Contrast:" FontSize="11"/>
+                                    <Slider x:Name="ContrastSlider" Grid.Row="1" Grid.Column="1"
+                                            Minimum="0" Maximum="100" Value="50"
+                                            ValueChanged="ImageSlider_ValueChanged" Tag="Contrast"/>
+                                    <TextBlock x:Name="ContrastValue" Grid.Row="1" Grid.Column="2"
+                                               Text="50" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
+
+                                    <Label Grid.Row="2" Content="Saturation:" FontSize="11"/>
+                                    <Slider x:Name="SaturationSlider" Grid.Row="2" Grid.Column="1"
+                                            Minimum="0" Maximum="100" Value="50"
+                                            ValueChanged="ImageSlider_ValueChanged" Tag="Saturation"/>
+                                    <TextBlock x:Name="SaturationValue" Grid.Row="2" Grid.Column="2"
+                                               Text="50" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
+
+                                    <Label Grid.Row="3" Content="Sharpness:" FontSize="11"/>
+                                    <Slider x:Name="SharpnessSlider" Grid.Row="3" Grid.Column="1"
+                                            Minimum="0" Maximum="100" Value="50"
+                                            ValueChanged="ImageSlider_ValueChanged" Tag="Sharpness"/>
+                                    <TextBlock x:Name="SharpnessValue" Grid.Row="3" Grid.Column="2"
+                                               Text="50" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
+
+                                    <Label Grid.Row="4" Content="Hue:" FontSize="11"/>
+                                    <Slider x:Name="HueSlider" Grid.Row="4" Grid.Column="1"
+                                            Minimum="0" Maximum="100" Value="50"
+                                            ValueChanged="ImageSlider_ValueChanged" Tag="Hue"/>
+                                    <TextBlock x:Name="HueValue" Grid.Row="4" Grid.Column="2"
+                                               Text="50" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
+                                </Grid>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Load" Click="LoadImageSettings_Click" Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Apply" Click="ApplyImageSettings_Click"
+                                            Background="{StaticResource AccentOrangeBrush}" Margin="2,0,0,0"/>
+                                </Grid>
+                                <Button Content="Reset to Default" Click="ResetImageSettings_Click"
+                                        Margin="0,5,0,0" FontSize="11"/>
+                            </StackPanel>
+                        </GroupBox>
+
                         <!-- Video Encoder Settings -->
                         <GroupBox Header="Video Encoder" x:Name="EncoderSettingsGroup" IsEnabled="False">
                             <StackPanel>

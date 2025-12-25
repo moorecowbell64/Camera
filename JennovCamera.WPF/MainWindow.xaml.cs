@@ -468,6 +468,7 @@ public partial class MainWindow : System.Windows.Window
 
             // Enable settings controls
             StreamSettingsGroup.IsEnabled = true;
+            ImageSettingsGroup.IsEnabled = true;
             EncoderSettingsGroup.IsEnabled = true;
             OSDSettingsGroup.IsEnabled = true;
             DeviceInfoGroup.IsEnabled = true;
@@ -550,6 +551,7 @@ public partial class MainWindow : System.Windows.Window
 
             // Disable settings controls
             StreamSettingsGroup.IsEnabled = false;
+            ImageSettingsGroup.IsEnabled = false;
             EncoderSettingsGroup.IsEnabled = false;
             OSDSettingsGroup.IsEnabled = false;
             DeviceInfoGroup.IsEnabled = false;
@@ -2261,6 +2263,173 @@ public partial class MainWindow : System.Windows.Window
         }
 
         UpdateFFmpegStatus();
+    }
+
+    #endregion
+
+    #region Image Settings (RPC)
+
+    private bool _isLoadingImageSettings;
+    private VideoColorConfig? _currentVideoColor;
+
+    private void ImageSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isLoadingImageSettings || _isInitializing) return;
+
+        var slider = sender as Slider;
+        if (slider == null) return;
+
+        var value = (int)slider.Value;
+        var tag = slider.Tag?.ToString();
+
+        // Update the corresponding label
+        switch (tag)
+        {
+            case "Brightness":
+                BrightnessValue.Text = value.ToString();
+                break;
+            case "Contrast":
+                ContrastValue.Text = value.ToString();
+                break;
+            case "Saturation":
+                SaturationValue.Text = value.ToString();
+                break;
+            case "Sharpness":
+                SharpnessValue.Text = value.ToString();
+                break;
+            case "Hue":
+                HueValue.Text = value.ToString();
+                break;
+        }
+    }
+
+    private async void LoadImageSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            _isLoadingImageSettings = true;
+            _currentVideoColor = await _client.Rpc.GetVideoColorAsync();
+
+            if (_currentVideoColor != null)
+            {
+                BrightnessSlider.Value = _currentVideoColor.Brightness;
+                ContrastSlider.Value = _currentVideoColor.Contrast;
+                SaturationSlider.Value = _currentVideoColor.Saturation;
+                SharpnessSlider.Value = _currentVideoColor.Sharpness;
+                HueSlider.Value = _currentVideoColor.Hue;
+
+                BrightnessValue.Text = _currentVideoColor.Brightness.ToString();
+                ContrastValue.Text = _currentVideoColor.Contrast.ToString();
+                SaturationValue.Text = _currentVideoColor.Saturation.ToString();
+                SharpnessValue.Text = _currentVideoColor.Sharpness.ToString();
+                HueValue.Text = _currentVideoColor.Hue.ToString();
+            }
+            else
+            {
+                MessageBox.Show("Could not load image settings from camera.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load image settings: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _isLoadingImageSettings = false;
+        }
+    }
+
+    private async void ApplyImageSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var config = new VideoColorConfig
+            {
+                Brightness = (int)BrightnessSlider.Value,
+                Contrast = (int)ContrastSlider.Value,
+                Saturation = (int)SaturationSlider.Value,
+                Sharpness = (int)SharpnessSlider.Value,
+                Hue = (int)HueSlider.Value,
+                Gamma = _currentVideoColor?.Gamma ?? 50,
+                Gain = _currentVideoColor?.Gain ?? 50
+            };
+
+            var success = await _client.Rpc.SetVideoColorAsync(config);
+
+            if (success)
+            {
+                MessageBox.Show("Image settings applied successfully!",
+                    "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                _currentVideoColor = config;
+            }
+            else
+            {
+                MessageBox.Show("Failed to apply image settings.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to apply image settings: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ResetImageSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        var result = MessageBox.Show("Reset image settings to default values (50)?",
+            "Confirm Reset", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var config = new VideoColorConfig
+            {
+                Brightness = 50,
+                Contrast = 50,
+                Saturation = 50,
+                Sharpness = 50,
+                Hue = 50,
+                Gamma = 50,
+                Gain = 50
+            };
+
+            var success = await _client.Rpc.SetVideoColorAsync(config);
+
+            if (success)
+            {
+                _isLoadingImageSettings = true;
+                BrightnessSlider.Value = 50;
+                ContrastSlider.Value = 50;
+                SaturationSlider.Value = 50;
+                SharpnessSlider.Value = 50;
+                HueSlider.Value = 50;
+                _isLoadingImageSettings = false;
+
+                MessageBox.Show("Image settings reset to defaults.",
+                    "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                _currentVideoColor = config;
+            }
+            else
+            {
+                MessageBox.Show("Failed to reset image settings.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to reset image settings: {ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     #endregion
