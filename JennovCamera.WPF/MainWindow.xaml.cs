@@ -499,6 +499,26 @@ public partial class MainWindow : System.Windows.Window
             EventsGroup.IsEnabled = true;
             ServicesGroup.IsEnabled = true;
 
+            // Enable Advanced tab controls
+            ToursGroup.IsEnabled = true;
+            PatternsGroup.IsEnabled = true;
+            ScanGroup.IsEnabled = true;
+            WiperGroup.IsEnabled = true;
+            TwoWayAudioGroup.IsEnabled = true;
+            PrivacyMasksGroup.IsEnabled = true;
+            AlarmsGroup.IsEnabled = true;
+
+            // Enable Network tab controls
+            NetworkGroup.IsEnabled = true;
+            NtpGroup.IsEnabled = true;
+            EmailGroup.IsEnabled = true;
+            WifiGroup.IsEnabled = true;
+
+            // Enable Firmware tab controls
+            FirmwareGroup.IsEnabled = true;
+            MaintenanceGroup.IsEnabled = true;
+            DeviceActionsGroup.IsEnabled = true;
+
             // Initialize audio manager
             _audioManager = new AudioManager();
             _audioManager.SetRtspUrl(ip, username, password);
@@ -2874,6 +2894,741 @@ public partial class MainWindow : System.Windows.Window
             LoadEventCapsAsync(),
             LoadServicesAsync()
         );
+    }
+
+    #endregion
+
+    #region Advanced Tab - PTZ Tours
+
+    private async void RefreshTours_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var tours = await _client.Rpc.GetPtzToursAsync();
+            TourCombo.Items.Clear();
+            if (tours != null)
+            {
+                foreach (var tour in tours)
+                {
+                    TourCombo.Items.Add(tour);
+                }
+                if (tours.Length > 0)
+                    TourCombo.SelectedIndex = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            TourStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void StartTour_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null || TourCombo.SelectedItem == null) return;
+
+        try
+        {
+            var tour = TourCombo.SelectedItem as PtzTour;
+            if (tour != null)
+            {
+                var success = await _client.Rpc.StartPtzTourAsync(tour.Id);
+                TourStatusText.Text = success ? $"Tour '{tour.Name}' running" : "Failed to start tour";
+                TourStatusText.Foreground = success ? Brushes.LimeGreen : Brushes.Orange;
+            }
+        }
+        catch (Exception ex)
+        {
+            TourStatusText.Text = $"Error: {ex.Message}";
+            TourStatusText.Foreground = Brushes.Red;
+        }
+    }
+
+    private async void StopTour_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var success = await _client.Rpc.StopPtzTourAsync();
+            TourStatusText.Text = success ? "Tour stopped" : "Failed to stop tour";
+            TourStatusText.Foreground = success ? Brushes.Gray : Brushes.Orange;
+        }
+        catch (Exception ex)
+        {
+            TourStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - PTZ Patterns
+
+    private int GetSelectedPatternId()
+    {
+        if (PatternCombo.SelectedItem is ComboBoxItem item && item.Tag != null)
+            return int.Parse(item.Tag.ToString()!);
+        return 1;
+    }
+
+    private async void StartPatternRecord_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var patternId = GetSelectedPatternId();
+            var success = await _client.Rpc.StartPatternRecordAsync(patternId);
+            PatternStatusText.Text = success ? $"Recording pattern {patternId}..." : "Failed to start recording";
+            PatternStatusText.Foreground = success ? Brushes.Orange : Brushes.Red;
+        }
+        catch (Exception ex)
+        {
+            PatternStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void StopPatternRecord_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var success = await _client.Rpc.StopPatternRecordAsync();
+            PatternStatusText.Text = success ? "Pattern saved" : "Failed to stop recording";
+            PatternStatusText.Foreground = Brushes.Gray;
+        }
+        catch (Exception ex)
+        {
+            PatternStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void StartPatternReplay_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var patternId = GetSelectedPatternId();
+            var success = await _client.Rpc.StartPatternReplayAsync(patternId);
+            PatternStatusText.Text = success ? $"Playing pattern {patternId}..." : "Failed to start playback";
+            PatternStatusText.Foreground = success ? Brushes.LimeGreen : Brushes.Red;
+        }
+        catch (Exception ex)
+        {
+            PatternStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void StopPatternReplay_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var success = await _client.Rpc.StopPatternReplayAsync();
+            PatternStatusText.Text = success ? "Pattern stopped" : "Failed to stop";
+            PatternStatusText.Foreground = Brushes.Gray;
+        }
+        catch (Exception ex)
+        {
+            PatternStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - Auto Scan
+
+    private async void SetScanLeftLimit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.SetPtzScanLimitAsync("Left");
+            MessageBox.Show("Left scan limit set to current position.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to set limit: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void SetScanRightLimit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.SetPtzScanLimitAsync("Right");
+            MessageBox.Show("Right scan limit set to current position.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to set limit: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void StartScan_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.StartPtzScanAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to start scan: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void StopScan_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.StopPtzScanAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to stop scan: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - Wiper Control
+
+    private async void WiperOnce_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.WiperOnceAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Wiper error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void WiperStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.WiperStartAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Wiper error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void WiperStop_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.WiperStopAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Wiper error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - Two-Way Audio
+
+    private bool _isTalking;
+
+    private async void StartTalk_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var success = await _client.Rpc.StartSpeakerAsync();
+            if (success)
+            {
+                _isTalking = true;
+                TalkButton.Content = "Talking...";
+                TalkStatusText.Text = "Two-way audio active";
+                TalkStatusText.Foreground = Brushes.LimeGreen;
+            }
+            else
+            {
+                TalkStatusText.Text = "Failed to start talk";
+                TalkStatusText.Foreground = Brushes.Orange;
+            }
+        }
+        catch (Exception ex)
+        {
+            TalkStatusText.Text = $"Error: {ex.Message}";
+            TalkStatusText.Foreground = Brushes.Red;
+        }
+    }
+
+    private async void StopTalk_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.StopSpeakerAsync();
+            _isTalking = false;
+            TalkButton.Content = "Start Talk";
+            TalkStatusText.Text = "Two-way audio inactive";
+            TalkStatusText.Foreground = Brushes.Gray;
+        }
+        catch (Exception ex)
+        {
+            TalkStatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - Privacy Masks
+
+    private PrivacyMaskConfig? _currentPrivacyMasks;
+
+    private async void LoadPrivacyMasks_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            _currentPrivacyMasks = await _client.Rpc.GetPrivacyMasksAsync();
+            PrivacyMasksListBox.Items.Clear();
+
+            if (_currentPrivacyMasks?.Covers != null)
+            {
+                for (int i = 0; i < _currentPrivacyMasks.Covers.Length; i++)
+                {
+                    var cover = _currentPrivacyMasks.Covers[i];
+                    var status = cover.Enable ? "Enabled" : "Disabled";
+                    PrivacyMasksListBox.Items.Add($"Mask {i + 1}: {status}");
+                }
+            }
+            else
+            {
+                PrivacyMasksListBox.Items.Add("No privacy masks configured");
+            }
+        }
+        catch (Exception ex)
+        {
+            PrivacyMasksListBox.Items.Clear();
+            PrivacyMasksListBox.Items.Add($"Error: {ex.Message}");
+        }
+    }
+
+    private async void TogglePrivacyMask_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null || _currentPrivacyMasks?.Covers == null) return;
+
+        var selectedIndex = PrivacyMasksListBox.SelectedIndex;
+        if (selectedIndex < 0 || selectedIndex >= _currentPrivacyMasks.Covers.Length) return;
+
+        try
+        {
+            _currentPrivacyMasks.Covers[selectedIndex].Enable = !_currentPrivacyMasks.Covers[selectedIndex].Enable;
+            var success = await _client.Rpc.SetPrivacyMasksAsync(_currentPrivacyMasks);
+
+            if (success)
+            {
+                LoadPrivacyMasks_Click(sender, e); // Refresh
+            }
+            else
+            {
+                MessageBox.Show("Failed to toggle privacy mask.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region Advanced Tab - Alarms
+
+    private async void RefreshAlarms_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var slots = await _client.Rpc.GetAlarmSlotsAsync();
+            if (slots != null)
+            {
+                AlarmInputsText.Text = $"{slots.InputCount} inputs";
+                AlarmOutputsText.Text = $"{slots.OutputCount} outputs";
+            }
+
+            var inputs = await _client.Rpc.GetAlarmInputStatesAsync();
+            if (inputs != null)
+            {
+                var activeCount = inputs.Count(i => i.State == 1);
+                AlarmInputsText.Text = $"{inputs.Length} inputs ({activeCount} active)";
+            }
+
+            var outputs = await _client.Rpc.GetAlarmOutputStatesAsync();
+            if (outputs != null)
+            {
+                var activeCount = outputs.Count(o => o.State == 1);
+                AlarmOutputsText.Text = $"{outputs.Length} outputs ({activeCount} active)";
+            }
+        }
+        catch (Exception ex)
+        {
+            AlarmInputsText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void TriggerAlarmOutput_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.SetAlarmOutputAsync(0, true);
+            RefreshAlarms_Click(sender, e);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ClearAlarmOutput_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            await _client.Rpc.SetAlarmOutputAsync(0, false);
+            RefreshAlarms_Click(sender, e);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region Network Tab
+
+    private async void RefreshNetworkInfo_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var config = await _client.Rpc.GetNetworkConfigAsync();
+            if (config != null)
+            {
+                HostnameText.Text = config.Hostname ?? "--";
+                InterfaceText.Text = config.DefaultInterface ?? "--";
+            }
+
+            var interfaces = await _client.Rpc.GetNetworkInterfacesAsync();
+            if (interfaces != null && interfaces.Length > 0)
+            {
+                var iface = interfaces[0];
+                MacAddressText.Text = iface.MacAddress ?? "--";
+                InterfaceText.Text = $"{iface.Name} ({iface.IPAddress})";
+            }
+        }
+        catch (Exception ex)
+        {
+            HostnameText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void LoadNtpSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var ntp = await _client.Rpc.GetNtpConfigAsync();
+            if (ntp != null)
+            {
+                NtpEnabledCheck.IsChecked = ntp.Enable;
+                NtpServerText.Text = ntp.Address ?? "pool.ntp.org";
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load NTP settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ApplyNtpSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var config = new NtpConfig
+            {
+                Enable = NtpEnabledCheck.IsChecked ?? false,
+                Address = NtpServerText.Text,
+                Port = 123,
+                UpdatePeriod = 60
+            };
+
+            var success = await _client.Rpc.SetNtpConfigAsync(config);
+            MessageBox.Show(success ? "NTP settings applied." : "Failed to apply NTP settings.",
+                success ? "Success" : "Error", MessageBoxButton.OK,
+                success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void LoadEmailSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var email = await _client.Rpc.GetEmailConfigAsync();
+            if (email != null)
+            {
+                EmailEnabledCheck.IsChecked = email.Enable;
+                EmailServerText.Text = email.Address ?? "";
+                EmailPortText.Text = email.Port.ToString();
+                EmailUserText.Text = email.UserName ?? "";
+                EmailReceiverText.Text = email.Receivers != null && email.Receivers.Length > 0 ? email.Receivers[0] : "";
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load email settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ApplyEmailSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var config = new EmailConfig
+            {
+                Enable = EmailEnabledCheck.IsChecked ?? false,
+                Address = EmailServerText.Text,
+                Port = int.TryParse(EmailPortText.Text, out var port) ? port : 587,
+                UserName = EmailUserText.Text,
+                Receivers = new[] { EmailReceiverText.Text }
+            };
+
+            var success = await _client.Rpc.SetEmailConfigAsync(config);
+            MessageBox.Show(success ? "Email settings applied." : "Failed to apply email settings.",
+                success ? "Success" : "Error", MessageBoxButton.OK,
+                success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ScanWifi_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            WifiListBox.Items.Clear();
+            WifiListBox.Items.Add("Scanning...");
+
+            var networks = await _client.Rpc.ScanWifiNetworksAsync();
+            WifiListBox.Items.Clear();
+
+            if (networks != null && networks.Length > 0)
+            {
+                foreach (var network in networks.OrderByDescending(n => n.Signal))
+                {
+                    WifiListBox.Items.Add($"{network.SSID} (Signal: {network.Signal}%, {network.Security})");
+                }
+            }
+            else
+            {
+                WifiListBox.Items.Add("No WiFi networks found");
+            }
+        }
+        catch (Exception ex)
+        {
+            WifiListBox.Items.Clear();
+            WifiListBox.Items.Add($"Error: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region Firmware Tab
+
+    private async void RefreshFirmwareInfo_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var info = await _client.Rpc.GetFirmwareInfoAsync();
+            if (info != null)
+            {
+                FirmwareVersionText.Text = info.Version ?? "--";
+                FirmwareBuildDateText.Text = info.BuildDate ?? "--";
+                FirmwareWebVersionText.Text = info.WebVersion ?? "--";
+            }
+        }
+        catch (Exception ex)
+        {
+            FirmwareVersionText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void LoadMaintenanceSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var config = await _client.Rpc.GetAutoMaintenanceAsync();
+            if (config != null)
+            {
+                AutoRebootCheck.IsChecked = config.Enable;
+                RebootTimeText.Text = config.RebootTime ?? "03:00";
+
+                // Select day in combo
+                foreach (ComboBoxItem item in RebootDayCombo.Items)
+                {
+                    if (item.Content?.ToString() == config.RebootDay)
+                    {
+                        RebootDayCombo.SelectedItem = item;
+                        break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load maintenance settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ApplyMaintenanceSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var selectedDay = (RebootDayCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Everyday";
+
+            var config = new AutoMaintenanceConfig
+            {
+                Enable = AutoRebootCheck.IsChecked ?? false,
+                RebootDay = selectedDay,
+                RebootTime = RebootTimeText.Text
+            };
+
+            var success = await _client.Rpc.SetAutoMaintenanceAsync(config);
+            MessageBox.Show(success ? "Maintenance settings applied." : "Failed to apply settings.",
+                success ? "Success" : "Error", MessageBoxButton.OK,
+                success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void RebootCamera_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show("Are you sure you want to reboot the camera?\n\nThe connection will be lost.",
+            "Confirm Reboot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        if (_deviceManager == null) return;
+
+        try
+        {
+            await _deviceManager.RebootAsync();
+            MessageBox.Show("Reboot command sent. The camera will restart.", "Rebooting", MessageBoxButton.OK, MessageBoxImage.Information);
+            Disconnect();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to reboot: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void FactoryResetSoft_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show("Soft factory reset will restore settings but keep network configuration.\n\nAre you sure?",
+            "Confirm Soft Reset", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        if (_deviceManager == null) return;
+
+        try
+        {
+            await _deviceManager.FactoryResetAsync(false);
+            MessageBox.Show("Soft reset initiated. The camera will restart.", "Resetting", MessageBoxButton.OK, MessageBoxImage.Information);
+            Disconnect();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to reset: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void FactoryResetHard_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show("HARD FACTORY RESET will erase ALL settings including network configuration!\n\n" +
+            "You may need to find the camera on the network again after reset.\n\n" +
+            "Are you ABSOLUTELY sure?",
+            "Confirm HARD Reset", MessageBoxButton.YesNo, MessageBoxImage.Exclamation);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        // Double confirmation
+        result = MessageBox.Show("This is your LAST chance to cancel.\n\nProceed with hard factory reset?",
+            "Final Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Stop);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        if (_deviceManager == null) return;
+
+        try
+        {
+            await _deviceManager.FactoryResetAsync(true);
+            MessageBox.Show("Hard reset initiated. The camera will restart with factory defaults.", "Resetting", MessageBoxButton.OK, MessageBoxImage.Information);
+            Disconnect();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to reset: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     #endregion

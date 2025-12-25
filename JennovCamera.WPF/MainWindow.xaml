@@ -911,6 +911,516 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- Advanced Tab -->
+            <TabItem Header="Advanced">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
+
+                        <!-- PTZ Tours -->
+                        <GroupBox Header="PTZ Tours" x:Name="ToursGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="TourCombo" DisplayMemberPath="Name"/>
+                                    <Button Grid.Column="1" Content="Refresh"
+                                            Click="RefreshTours_Click"
+                                            Width="60" Margin="5,0,0,0"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Start Tour"
+                                            Click="StartTour_Click"
+                                            Background="{StaticResource AccentGreenBrush}"
+                                            Foreground="White"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Stop Tour"
+                                            Click="StopTour_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                                <TextBlock x:Name="TourStatusText"
+                                           Text="No tour active"
+                                           Foreground="#888888"
+                                           FontSize="11"
+                                           Margin="0,10,0,0"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- PTZ Patterns -->
+                        <GroupBox Header="PTZ Patterns" x:Name="PatternsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Pattern #:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="PatternCombo" Grid.Column="1" Margin="5,0,0,0">
+                                        <ComboBoxItem Content="Pattern 1" Tag="1"/>
+                                        <ComboBoxItem Content="Pattern 2" Tag="2"/>
+                                        <ComboBoxItem Content="Pattern 3" Tag="3"/>
+                                        <ComboBoxItem Content="Pattern 4" Tag="4"/>
+                                        <ComboBoxItem Content="Pattern 5" Tag="5"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Grid Margin="0,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Start Recording"
+                                            Click="StartPatternRecord_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Foreground="White"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Stop Recording"
+                                            Click="StopPatternRecord_Click"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Play Pattern"
+                                            Click="StartPatternReplay_Click"
+                                            Background="{StaticResource AccentGreenBrush}"
+                                            Foreground="White"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Stop Pattern"
+                                            Click="StopPatternReplay_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                                <TextBlock x:Name="PatternStatusText"
+                                           Text="Use patterns to record and replay PTZ movements"
+                                           Foreground="#888888"
+                                           FontSize="10"
+                                           TextWrapping="Wrap"
+                                           Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- PTZ Auto Scan -->
+                        <GroupBox Header="Auto Scan" x:Name="ScanGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock Text="Set scan limits, then start auto-scan."
+                                           Foreground="#888888" FontSize="11"
+                                           Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Set Left Limit"
+                                            Click="SetScanLeftLimit_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Set Right Limit"
+                                            Click="SetScanRightLimit_Click"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Start Scan"
+                                            Click="StartScan_Click"
+                                            Background="{StaticResource AccentGreenBrush}"
+                                            Foreground="White"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Stop Scan"
+                                            Click="StopScan_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Wiper Control -->
+                        <GroupBox Header="Wiper / Rain Brush" x:Name="WiperGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Wipe Once"
+                                            Click="WiperOnce_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Start"
+                                            Click="WiperStart_Click"
+                                            Background="{StaticResource AccentGreenBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,2,0"/>
+                                    <Button Grid.Column="2" Content="Stop"
+                                            Click="WiperStop_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Two-Way Audio -->
+                        <GroupBox Header="Two-Way Audio" x:Name="TwoWayAudioGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock Text="Talk to camera (requires microphone)"
+                                           Foreground="#888888" FontSize="11"
+                                           Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="TalkButton" Content="Start Talk"
+                                            Click="StartTalk_Click"
+                                            Background="{StaticResource AccentGreenBrush}"
+                                            Foreground="White"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Stop Talk"
+                                            Click="StopTalk_Click"
+                                            Background="{StaticResource AccentRedBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                                <TextBlock x:Name="TalkStatusText"
+                                           Text="Two-way audio inactive"
+                                           Foreground="#888888"
+                                           FontSize="11"
+                                           Margin="0,10,0,0"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Privacy Masks -->
+                        <GroupBox Header="Privacy Masks" x:Name="PrivacyMasksGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock Text="Configure up to 4 privacy mask regions."
+                                           Foreground="#888888" FontSize="11"
+                                           Margin="0,0,0,10"/>
+                                <ListBox x:Name="PrivacyMasksListBox"
+                                         Height="80"
+                                         Background="#252525"
+                                         Foreground="White"
+                                         BorderBrush="{StaticResource PrimaryBrush}"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Load Masks"
+                                            Click="LoadPrivacyMasks_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Toggle Mask"
+                                            Click="TogglePrivacyMask_Click"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Alarms -->
+                        <GroupBox Header="Alarm I/O" x:Name="AlarmsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Inputs:" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="AlarmInputsText" Grid.Column="1"
+                                               Text="--"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Outputs:" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="AlarmOutputsText" Grid.Column="1"
+                                               Text="--"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Refresh"
+                                            Click="RefreshAlarms_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Trigger Out"
+                                            Click="TriggerAlarmOutput_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Foreground="White"
+                                            Margin="2,0,2,0"/>
+                                    <Button Grid.Column="2" Content="Clear Out"
+                                            Click="ClearAlarmOutput_Click"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Network Tab -->
+            <TabItem Header="Network">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
+
+                        <!-- Network Info -->
+                        <GroupBox Header="Network Configuration" x:Name="NetworkGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Content="Hostname:" FontSize="11"/>
+                                    <TextBlock x:Name="HostnameText" Grid.Row="0" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Label Grid.Row="1" Content="Interface:" FontSize="11"/>
+                                    <TextBlock x:Name="InterfaceText" Grid.Row="1" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Label Grid.Row="2" Content="MAC:" FontSize="11"/>
+                                    <TextBlock x:Name="MacAddressText" Grid.Row="2" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Button Content="Refresh Network Info"
+                                        Click="RefreshNetworkInfo_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- NTP Settings -->
+                        <GroupBox Header="NTP Time Sync" x:Name="NtpGroup" IsEnabled="False">
+                            <StackPanel>
+                                <CheckBox x:Name="NtpEnabledCheck" Content="Enable NTP"
+                                          Foreground="White" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Server:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="NtpServerText" Grid.Column="1"
+                                             Text="pool.ntp.org" Margin="5,0,0,0"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Load NTP"
+                                            Click="LoadNtpSettings_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Apply NTP"
+                                            Click="ApplyNtpSettings_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Email Settings -->
+                        <GroupBox Header="Email Notifications" x:Name="EmailGroup" IsEnabled="False">
+                            <StackPanel>
+                                <CheckBox x:Name="EmailEnabledCheck" Content="Enable Email Alerts"
+                                          Foreground="White" Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Content="Server:" FontSize="11"/>
+                                    <TextBox x:Name="EmailServerText" Grid.Row="0" Grid.Column="1" Margin="0,2"/>
+                                    <Label Grid.Row="1" Content="Port:" FontSize="11"/>
+                                    <TextBox x:Name="EmailPortText" Grid.Row="1" Grid.Column="1"
+                                             Text="587" Margin="0,2"/>
+                                    <Label Grid.Row="2" Content="User:" FontSize="11"/>
+                                    <TextBox x:Name="EmailUserText" Grid.Row="2" Grid.Column="1" Margin="0,2"/>
+                                    <Label Grid.Row="3" Content="To:" FontSize="11"/>
+                                    <TextBox x:Name="EmailReceiverText" Grid.Row="3" Grid.Column="1" Margin="0,2"/>
+                                </Grid>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Load Email"
+                                            Click="LoadEmailSettings_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Apply Email"
+                                            Click="ApplyEmailSettings_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- WiFi Scanner -->
+                        <GroupBox Header="WiFi Networks" x:Name="WifiGroup" IsEnabled="False">
+                            <StackPanel>
+                                <ListBox x:Name="WifiListBox"
+                                         Height="100"
+                                         Background="#252525"
+                                         Foreground="White"
+                                         BorderBrush="{StaticResource PrimaryBrush}"/>
+                                <Button Content="Scan WiFi Networks"
+                                        Click="ScanWifi_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Firmware Tab -->
+            <TabItem Header="Firmware">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
+
+                        <!-- Firmware Info -->
+                        <GroupBox Header="Firmware Information" x:Name="FirmwareGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Content="Version:" FontSize="11"/>
+                                    <TextBlock x:Name="FirmwareVersionText" Grid.Row="0" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center" FontWeight="Bold"/>
+                                    <Label Grid.Row="1" Content="Build Date:" FontSize="11"/>
+                                    <TextBlock x:Name="FirmwareBuildDateText" Grid.Row="1" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Label Grid.Row="2" Content="Web Version:" FontSize="11"/>
+                                    <TextBlock x:Name="FirmwareWebVersionText" Grid.Row="2" Grid.Column="1"
+                                               Text="--" Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Button Content="Refresh Firmware Info"
+                                        Click="RefreshFirmwareInfo_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Auto Maintenance -->
+                        <GroupBox Header="Auto Maintenance" x:Name="MaintenanceGroup" IsEnabled="False">
+                            <StackPanel>
+                                <CheckBox x:Name="AutoRebootCheck" Content="Enable Auto Reboot"
+                                          Foreground="White" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Content="Day:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="RebootDayCombo" Grid.Row="0" Grid.Column="1" Margin="5,2">
+                                        <ComboBoxItem Content="Sunday" Tag="0"/>
+                                        <ComboBoxItem Content="Monday" Tag="1"/>
+                                        <ComboBoxItem Content="Tuesday" Tag="2"/>
+                                        <ComboBoxItem Content="Wednesday" Tag="3"/>
+                                        <ComboBoxItem Content="Thursday" Tag="4"/>
+                                        <ComboBoxItem Content="Friday" Tag="5"/>
+                                        <ComboBoxItem Content="Saturday" Tag="6"/>
+                                        <ComboBoxItem Content="Everyday" Tag="7"/>
+                                    </ComboBox>
+                                    <Label Grid.Row="1" Content="Time:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="RebootTimeText" Grid.Row="1" Grid.Column="1"
+                                             Text="03:00" Margin="5,2"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Load"
+                                            Click="LoadMaintenanceSettings_Click"
+                                            Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Apply"
+                                            Click="ApplyMaintenanceSettings_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Margin="2,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Device Actions -->
+                        <GroupBox Header="Device Actions" x:Name="DeviceActionsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Button Content="Reboot Camera"
+                                        Click="RebootCamera_Click"
+                                        Background="{StaticResource AccentOrangeBrush}"
+                                        Foreground="White"
+                                        Height="35"
+                                        Margin="0,0,0,10"/>
+                                <Button Content="Factory Reset (Soft)"
+                                        Click="FactoryResetSoft_Click"
+                                        Background="#FF6600"
+                                        Foreground="White"
+                                        Height="35"
+                                        Margin="0,0,0,5"/>
+                                <Button Content="Factory Reset (Hard)"
+                                        Click="FactoryResetHard_Click"
+                                        Background="{StaticResource AccentRedBrush}"
+                                        Foreground="White"
+                                        Height="35"/>
+                                <TextBlock Text="Warning: Factory reset will erase all settings!"
+                                           Foreground="{StaticResource AccentRedBrush}"
+                                           FontSize="10"
+                                           TextWrapping="Wrap"
+                                           Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
         </TabControl>
     </Grid>
 </Window>

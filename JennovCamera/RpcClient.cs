@@ -626,6 +626,706 @@ public class RpcClient : IDisposable
 
     #endregion
 
+    #region PTZ Tours & Patterns
+
+    /// <summary>
+    /// Get list of PTZ tours
+    /// </summary>
+    public async Task<PtzTour[]?> GetPtzToursAsync()
+    {
+        var response = await SendAsync("ptz.getTours");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<PtzToursResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Tours;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Start a PTZ tour
+    /// </summary>
+    public async Task<bool> StartPtzTourAsync(int tourId)
+    {
+        var response = await SendAsync("ptz.startTour", new { id = tourId, channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop current PTZ tour
+    /// </summary>
+    public async Task<bool> StopPtzTourAsync()
+    {
+        var response = await SendAsync("ptz.stopTour", new { channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Create or update a PTZ tour
+    /// </summary>
+    public async Task<bool> SetPtzTourAsync(PtzTour tour)
+    {
+        var response = await SendAsync("ptz.setTour", tour);
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Delete a PTZ tour
+    /// </summary>
+    public async Task<bool> DeletePtzTourAsync(int tourId)
+    {
+        var response = await SendAsync("ptz.deleteTour", new { id = tourId });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get tour points for a specific tour
+    /// </summary>
+    public async Task<PtzTourPoint[]?> GetTourPointsAsync(int tourId)
+    {
+        var response = await SendAsync("ptz.getTourPoints", new { id = tourId });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<PtzTourPointsResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Points;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Start recording a PTZ pattern
+    /// </summary>
+    public async Task<bool> StartPatternRecordAsync(int patternId)
+    {
+        var response = await SendAsync("ptz.startPatternRecord", new { id = patternId, channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop recording a PTZ pattern
+    /// </summary>
+    public async Task<bool> StopPatternRecordAsync()
+    {
+        var response = await SendAsync("ptz.stopPatternRecord", new { channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Start replaying a PTZ pattern
+    /// </summary>
+    public async Task<bool> StartPatternReplayAsync(int patternId)
+    {
+        var response = await SendAsync("ptz.startPatternReplay", new { id = patternId, channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop replaying a PTZ pattern
+    /// </summary>
+    public async Task<bool> StopPatternReplayAsync()
+    {
+        var response = await SendAsync("ptz.stopPatternReplay", new { channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get available PTZ patterns
+    /// </summary>
+    public async Task<int[]?> GetPtzPatternsAsync()
+    {
+        var response = await SendAsync("ptz.getPatterns", new { channel = 0 });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<PtzPatternsResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Patterns;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Start PTZ auto-scan between limits
+    /// </summary>
+    public async Task<bool> StartPtzScanAsync()
+    {
+        var response = await SendAsync("ptz.startScan", new { channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop PTZ auto-scan
+    /// </summary>
+    public async Task<bool> StopPtzScanAsync()
+    {
+        var response = await SendAsync("ptz.stopScan", new { channel = 0 });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Set PTZ scan limits
+    /// </summary>
+    public async Task<bool> SetPtzScanLimitAsync(string side) // "Left" or "Right"
+    {
+        var response = await SendAsync("ptz.setScanLimit", new { side, channel = 0 });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Wiper/Rain Brush Control
+
+    /// <summary>
+    /// Start wiper continuous movement
+    /// </summary>
+    public async Task<bool> WiperStartAsync()
+    {
+        var response = await SendAsync("ptz.start", new
+        {
+            code = "RainBrush",
+            arg1 = 0,
+            arg2 = 1,
+            arg3 = 0,
+            channel = 0
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop wiper movement
+    /// </summary>
+    public async Task<bool> WiperStopAsync()
+    {
+        var response = await SendAsync("ptz.stop", new
+        {
+            code = "RainBrush",
+            channel = 0
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Wiper single wipe
+    /// </summary>
+    public async Task<bool> WiperOnceAsync()
+    {
+        var response = await SendAsync("ptz.start", new
+        {
+            code = "RainBrushOnce",
+            arg1 = 0,
+            arg2 = 1,
+            arg3 = 0,
+            channel = 0
+        });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Two-Way Audio
+
+    /// <summary>
+    /// Start audio output (speaker)
+    /// </summary>
+    public async Task<bool> StartSpeakerAsync()
+    {
+        var response = await SendAsync("speak.startPlay");
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop audio output
+    /// </summary>
+    public async Task<bool> StopSpeakerAsync()
+    {
+        var response = await SendAsync("speak.stopPlay");
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Start audio recording from camera
+    /// </summary>
+    public async Task<bool> StartAudioRecordingAsync(int channel = 0)
+    {
+        var response = await SendAsync("audioRecordManager.startChannel", new { channel });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop audio recording
+    /// </summary>
+    public async Task<bool> StopAudioRecordingAsync(int channel = 0)
+    {
+        var response = await SendAsync("audioRecordManager.stopChannel", new { channel });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get audio capabilities
+    /// </summary>
+    public async Task<AudioCaps?> GetAudioCapsAsync()
+    {
+        var response = await SendAsync("AudioInput.getCaps");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            return JsonSerializer.Deserialize<AudioCaps>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch { return null; }
+    }
+
+    #endregion
+
+    #region Privacy Masks
+
+    /// <summary>
+    /// Get privacy mask configuration
+    /// </summary>
+    public async Task<PrivacyMaskConfig?> GetPrivacyMasksAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "VideoWidget" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<PrivacyMaskWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.VideoWidget?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set privacy mask configuration
+    /// </summary>
+    public async Task<bool> SetPrivacyMasksAsync(PrivacyMaskConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "VideoWidget",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Alarm I/O
+
+    /// <summary>
+    /// Get alarm input states
+    /// </summary>
+    public async Task<AlarmState[]?> GetAlarmInputStatesAsync()
+    {
+        var response = await SendAsync("alarm.getInState");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<AlarmStatesResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.States;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Get alarm output states
+    /// </summary>
+    public async Task<AlarmState[]?> GetAlarmOutputStatesAsync()
+    {
+        var response = await SendAsync("alarm.getOutState");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<AlarmStatesResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.States;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set alarm output state
+    /// </summary>
+    public async Task<bool> SetAlarmOutputAsync(int channel, bool active)
+    {
+        var response = await SendAsync("alarm.setOutState", new
+        {
+            channel,
+            state = active ? 1 : 0
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get alarm input/output slot counts
+    /// </summary>
+    public async Task<AlarmSlots?> GetAlarmSlotsAsync()
+    {
+        var inResponse = await SendAsync("alarm.getInSlots");
+        var outResponse = await SendAsync("alarm.getOutSlots");
+
+        return new AlarmSlots
+        {
+            InputCount = inResponse.Params is JsonElement inEl ? inEl.GetProperty("count").GetInt32() : 0,
+            OutputCount = outResponse.Params is JsonElement outEl ? outEl.GetProperty("count").GetInt32() : 0
+        };
+    }
+
+    /// <summary>
+    /// Get alarm configuration
+    /// </summary>
+    public async Task<AlarmConfig?> GetAlarmConfigAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "Alarm" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<AlarmConfigWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.Alarm?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set alarm configuration
+    /// </summary>
+    public async Task<bool> SetAlarmConfigAsync(AlarmConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "Alarm",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Network Configuration
+
+    /// <summary>
+    /// Get network configuration
+    /// </summary>
+    public async Task<NetworkConfig?> GetNetworkConfigAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "Network" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<NetworkConfigWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.Network?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Get NTP configuration
+    /// </summary>
+    public async Task<NtpConfig?> GetNtpConfigAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "NTP" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<NtpConfigWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.NTP?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set NTP configuration
+    /// </summary>
+    public async Task<bool> SetNtpConfigAsync(NtpConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "NTP",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get email configuration
+    /// </summary>
+    public async Task<EmailConfig?> GetEmailConfigAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "Email" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<EmailConfigWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.Email?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set email configuration
+    /// </summary>
+    public async Task<bool> SetEmailConfigAsync(EmailConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "Email",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Scan for WiFi networks
+    /// </summary>
+    public async Task<WifiNetwork[]?> ScanWifiNetworksAsync()
+    {
+        var response = await SendAsync("netApp.scanWLanDevices");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<WifiScanResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Networks;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Get network interfaces
+    /// </summary>
+    public async Task<NetworkInterface[]?> GetNetworkInterfacesAsync()
+    {
+        var response = await SendAsync("netApp.getNetInterfaces");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<NetworkInterfacesResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Interfaces;
+        }
+        catch { return null; }
+    }
+
+    #endregion
+
+    #region Firmware Management
+
+    /// <summary>
+    /// Get firmware version information
+    /// </summary>
+    public async Task<FirmwareInfo?> GetFirmwareInfoAsync()
+    {
+        var response = await SendAsync("magicBox.getSoftwareVersion");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            return JsonSerializer.Deserialize<FirmwareInfo>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Prepare for firmware upgrade
+    /// </summary>
+    public async Task<bool> PrepareUpgradeAsync()
+    {
+        var response = await SendAsync("upgrader.prepare");
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get upgrade status
+    /// </summary>
+    public async Task<UpgradeStatus?> GetUpgradeStatusAsync()
+    {
+        var response = await SendAsync("upgrader.getStatus");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            return JsonSerializer.Deserialize<UpgradeStatus>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Cancel firmware upgrade
+    /// </summary>
+    public async Task<bool> CancelUpgradeAsync()
+    {
+        var response = await SendAsync("upgrader.cancel");
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get auto maintenance configuration
+    /// </summary>
+    public async Task<AutoMaintenanceConfig?> GetAutoMaintenanceAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "AutoMaintain" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<AutoMaintenanceWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.AutoMaintain?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set auto maintenance configuration
+    /// </summary>
+    public async Task<bool> SetAutoMaintenanceAsync(AutoMaintenanceConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "AutoMaintain",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Recording & Playback Control
+
+    /// <summary>
+    /// Start recording
+    /// </summary>
+    public async Task<bool> StartRecordingAsync(int channel = 0)
+    {
+        var response = await SendAsync("recordManager.start", new { channel });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Stop recording
+    /// </summary>
+    public async Task<bool> StopRecordingAsync(int channel = 0)
+    {
+        var response = await SendAsync("recordManager.stop", new { channel });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get recording configuration
+    /// </summary>
+    public async Task<RecordConfig?> GetRecordConfigAsync()
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "Record" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var wrapper = JsonSerializer.Deserialize<RecordConfigWrapper>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return wrapper?.Record?.FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Set recording configuration
+    /// </summary>
+    public async Task<bool> SetRecordConfigAsync(RecordConfig config)
+    {
+        var response = await SendAsync("configManager.setConfig", new
+        {
+            name = "Record",
+            table = new[] { config }
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Take a snapshot
+    /// </summary>
+    public async Task<bool> TakeSnapshotAsync(int channel = 0)
+    {
+        var response = await SendAsync("snapManager.start", new { channel });
+        return response.Result == true;
+    }
+
+    #endregion
+
     public void Dispose()
     {
         _httpClient.Dispose();
@@ -953,6 +1653,388 @@ public class ServiceListResult
 {
     [JsonPropertyName("services")]
     public string[]? Services { get; set; }
+}
+
+#endregion
+
+#region PTZ Tour Classes
+
+public class PtzToursResult
+{
+    [JsonPropertyName("tours")]
+    public PtzTour[]? Tours { get; set; }
+}
+
+public class PtzTour
+{
+    [JsonPropertyName("Id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("Points")]
+    public PtzTourPoint[]? Points { get; set; }
+}
+
+public class PtzTourPointsResult
+{
+    [JsonPropertyName("points")]
+    public PtzTourPoint[]? Points { get; set; }
+}
+
+public class PtzTourPoint
+{
+    [JsonPropertyName("PresetId")]
+    public int PresetId { get; set; }
+
+    [JsonPropertyName("Duration")]
+    public int Duration { get; set; } // Seconds to stay at preset
+
+    [JsonPropertyName("Speed")]
+    public int Speed { get; set; } // 1-8
+}
+
+public class PtzPatternsResult
+{
+    [JsonPropertyName("patterns")]
+    public int[]? Patterns { get; set; }
+}
+
+#endregion
+
+#region Audio Classes
+
+public class AudioCaps
+{
+    [JsonPropertyName("Channels")]
+    public int Channels { get; set; }
+
+    [JsonPropertyName("SampleRate")]
+    public int SampleRate { get; set; }
+
+    [JsonPropertyName("BitDepth")]
+    public int BitDepth { get; set; }
+
+    [JsonPropertyName("Compression")]
+    public string[]? Compression { get; set; }
+}
+
+#endregion
+
+#region Privacy Mask Classes
+
+public class PrivacyMaskWrapper
+{
+    [JsonPropertyName("VideoWidget")]
+    public PrivacyMaskConfig[]? VideoWidget { get; set; }
+}
+
+public class PrivacyMaskConfig
+{
+    [JsonPropertyName("Covers")]
+    public CoverRegion[]? Covers { get; set; }
+
+    [JsonPropertyName("ChannelTitle")]
+    public ChannelTitle? ChannelTitle { get; set; }
+}
+
+public class CoverRegion
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("Rect")]
+    public int[]? Rect { get; set; } // [left, top, right, bottom] in 0-8191 range
+
+    [JsonPropertyName("Color")]
+    public string? Color { get; set; } // Hex color like "0x000000"
+}
+
+public class ChannelTitle
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Rect")]
+    public int[]? Rect { get; set; }
+}
+
+#endregion
+
+#region Alarm Classes
+
+public class AlarmStatesResult
+{
+    [JsonPropertyName("states")]
+    public AlarmState[]? States { get; set; }
+}
+
+public class AlarmState
+{
+    [JsonPropertyName("Channel")]
+    public int Channel { get; set; }
+
+    [JsonPropertyName("State")]
+    public int State { get; set; } // 0 = inactive, 1 = active
+}
+
+public class AlarmSlots
+{
+    public int InputCount { get; set; }
+    public int OutputCount { get; set; }
+}
+
+public class AlarmConfigWrapper
+{
+    [JsonPropertyName("Alarm")]
+    public AlarmConfig[]? Alarm { get; set; }
+}
+
+public class AlarmConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("SensorType")]
+    public string? SensorType { get; set; } // "NO" or "NC"
+
+    [JsonPropertyName("EventHandler")]
+    public AlarmEventHandler? EventHandler { get; set; }
+}
+
+public class AlarmEventHandler
+{
+    [JsonPropertyName("RecordEnable")]
+    public bool RecordEnable { get; set; }
+
+    [JsonPropertyName("RecordLatch")]
+    public int RecordLatch { get; set; } // Seconds
+
+    [JsonPropertyName("AlarmOutEnable")]
+    public bool AlarmOutEnable { get; set; }
+
+    [JsonPropertyName("AlarmOutLatch")]
+    public int AlarmOutLatch { get; set; }
+
+    [JsonPropertyName("MailEnable")]
+    public bool MailEnable { get; set; }
+
+    [JsonPropertyName("SnapshotEnable")]
+    public bool SnapshotEnable { get; set; }
+}
+
+#endregion
+
+#region Network Configuration Classes
+
+public class NetworkConfigWrapper
+{
+    [JsonPropertyName("Network")]
+    public NetworkConfig[]? Network { get; set; }
+}
+
+public class NetworkConfig
+{
+    [JsonPropertyName("DefaultInterface")]
+    public string? DefaultInterface { get; set; }
+
+    [JsonPropertyName("Hostname")]
+    public string? Hostname { get; set; }
+
+    [JsonPropertyName("Domain")]
+    public string? Domain { get; set; }
+}
+
+public class NtpConfigWrapper
+{
+    [JsonPropertyName("NTP")]
+    public NtpConfig[]? NTP { get; set; }
+}
+
+public class NtpConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("Address")]
+    public string? Address { get; set; }
+
+    [JsonPropertyName("Port")]
+    public int Port { get; set; }
+
+    [JsonPropertyName("UpdatePeriod")]
+    public int UpdatePeriod { get; set; } // Minutes
+
+    [JsonPropertyName("TimeZone")]
+    public int TimeZone { get; set; }
+}
+
+public class EmailConfigWrapper
+{
+    [JsonPropertyName("Email")]
+    public EmailConfig[]? Email { get; set; }
+}
+
+public class EmailConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("Address")]
+    public string? Address { get; set; }
+
+    [JsonPropertyName("Port")]
+    public int Port { get; set; }
+
+    [JsonPropertyName("Encryption")]
+    public string? Encryption { get; set; } // "None", "SSL", "TLS"
+
+    [JsonPropertyName("UserName")]
+    public string? UserName { get; set; }
+
+    [JsonPropertyName("Password")]
+    public string? Password { get; set; }
+
+    [JsonPropertyName("Sender")]
+    public string? Sender { get; set; }
+
+    [JsonPropertyName("Receivers")]
+    public string[]? Receivers { get; set; }
+
+    [JsonPropertyName("Subject")]
+    public string? Subject { get; set; }
+
+    [JsonPropertyName("AttachSnapshot")]
+    public bool AttachSnapshot { get; set; }
+}
+
+public class WifiScanResult
+{
+    [JsonPropertyName("networks")]
+    public WifiNetwork[]? Networks { get; set; }
+}
+
+public class WifiNetwork
+{
+    [JsonPropertyName("SSID")]
+    public string? SSID { get; set; }
+
+    [JsonPropertyName("Signal")]
+    public int Signal { get; set; } // Percentage
+
+    [JsonPropertyName("Security")]
+    public string? Security { get; set; } // "None", "WEP", "WPA", "WPA2"
+
+    [JsonPropertyName("Channel")]
+    public int Channel { get; set; }
+}
+
+public class NetworkInterfacesResult
+{
+    [JsonPropertyName("interfaces")]
+    public NetworkInterface[]? Interfaces { get; set; }
+}
+
+public class NetworkInterface
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("IPAddress")]
+    public string? IPAddress { get; set; }
+
+    [JsonPropertyName("SubnetMask")]
+    public string? SubnetMask { get; set; }
+
+    [JsonPropertyName("DefaultGateway")]
+    public string? DefaultGateway { get; set; }
+
+    [JsonPropertyName("MacAddress")]
+    public string? MacAddress { get; set; }
+
+    [JsonPropertyName("DHCP")]
+    public bool DHCP { get; set; }
+}
+
+#endregion
+
+#region Firmware Classes
+
+public class FirmwareInfo
+{
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+
+    [JsonPropertyName("buildDate")]
+    public string? BuildDate { get; set; }
+
+    [JsonPropertyName("webVersion")]
+    public string? WebVersion { get; set; }
+}
+
+public class UpgradeStatus
+{
+    [JsonPropertyName("status")]
+    public string? Status { get; set; } // "idle", "uploading", "installing", "complete", "error"
+
+    [JsonPropertyName("progress")]
+    public int Progress { get; set; } // 0-100
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
+public class AutoMaintenanceWrapper
+{
+    [JsonPropertyName("AutoMaintain")]
+    public AutoMaintenanceConfig[]? AutoMaintain { get; set; }
+}
+
+public class AutoMaintenanceConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("RebootDay")]
+    public string? RebootDay { get; set; } // "Sunday", "Monday", etc. or "Everyday"
+
+    [JsonPropertyName("RebootTime")]
+    public string? RebootTime { get; set; } // "02:00:00"
+}
+
+#endregion
+
+#region Recording Configuration Classes
+
+public class RecordConfigWrapper
+{
+    [JsonPropertyName("Record")]
+    public RecordConfig[]? Record { get; set; }
+}
+
+public class RecordConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("PreRecord")]
+    public int PreRecord { get; set; } // Seconds
+
+    [JsonPropertyName("Redundancy")]
+    public bool Redundancy { get; set; }
+
+    [JsonPropertyName("PacketLength")]
+    public int PacketLength { get; set; } // Minutes per file
+
+    [JsonPropertyName("TimeSection")]
+    public string[][]? TimeSection { get; set; } // Schedule
 }
 
 #endregion
