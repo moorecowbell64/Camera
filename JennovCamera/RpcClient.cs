@@ -881,7 +881,7 @@ public class RpcClient : IDisposable
     /// </summary>
     public async Task<AudioCaps?> GetAudioCapsAsync()
     {
-        var response = await SendAsync("AudioInput.getCaps");
+        var response = await SendAsync("devAudioInput.getCaps", new { channel = 0 });
         if (response.Params == null) return null;
 
         try
@@ -893,6 +893,89 @@ public class RpcClient : IDisposable
             });
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Get audio encode configuration
+    /// </summary>
+    public async Task<AudioEncodeConfig?> GetAudioEncodeConfigAsync(int channel = 0)
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = "Encode" });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            Console.WriteLine($"[RPC] Audio encode config: {json}");
+
+            // Parse the encode config which contains audio settings
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("table", out var table) && table.GetArrayLength() > channel)
+            {
+                var channelConfig = table[channel];
+                if (channelConfig.TryGetProperty("Audio", out var audio))
+                {
+                    return JsonSerializer.Deserialize<AudioEncodeConfig>(audio.GetRawText(), new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                }
+            }
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[RPC] Audio config error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Enable or disable audio on the encode stream
+    /// </summary>
+    public async Task<bool> SetAudioEnabledAsync(bool enabled, int channel = 0)
+    {
+        // Get current config first
+        var response = await SendAsync("configManager.getConfig", new { name = "Encode" });
+        if (response.Params == null) return false;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            using var doc = JsonDocument.Parse(json);
+
+            if (doc.RootElement.TryGetProperty("table", out var table) && table.GetArrayLength() > channel)
+            {
+                // Modify the audio enable setting
+                var tableArray = JsonSerializer.Deserialize<JsonElement[]>(table.GetRawText());
+                if (tableArray == null || tableArray.Length <= channel) return false;
+
+                // Create modified config with audio enabled/disabled
+                var modifiedConfig = new
+                {
+                    name = "Encode",
+                    table = new[]
+                    {
+                        new
+                        {
+                            Audio = new
+                            {
+                                Enable = enabled
+                            }
+                        }
+                    }
+                };
+
+                var setResponse = await SendAsync("configManager.setConfig", modifiedConfig);
+                return setResponse.Result == true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[RPC] Set audio error: {ex.Message}");
+            return false;
+        }
     }
 
     #endregion
@@ -1721,6 +1804,27 @@ public class AudioCaps
 
     [JsonPropertyName("Compression")]
     public string[]? Compression { get; set; }
+}
+
+public class AudioEncodeConfig
+{
+    [JsonPropertyName("Enable")]
+    public bool Enable { get; set; }
+
+    [JsonPropertyName("Compression")]
+    public string? Compression { get; set; }  // "G.711A", "G.711Mu", "AAC", etc.
+
+    [JsonPropertyName("Depth")]
+    public int Depth { get; set; }
+
+    [JsonPropertyName("Frequency")]
+    public int Frequency { get; set; }
+
+    [JsonPropertyName("Mode")]
+    public int Mode { get; set; }
+
+    [JsonPropertyName("Pack")]
+    public string? Pack { get; set; }  // "DHAV", etc.
 }
 
 #endregion

@@ -2064,12 +2064,49 @@ public partial class MainWindow : System.Windows.Window
 
     // ===== Audio Controls =====
 
-    private void AudioButton_Click(object sender, RoutedEventArgs e)
+    private async void AudioButton_Click(object sender, RoutedEventArgs e)
     {
         if (_audioManager == null) return;
 
         if (!_isAudioEnabled)
         {
+            AudioButton.IsEnabled = false;
+            AudioStatusText.Text = "Audio: Checking...";
+
+            // First check if audio is enabled on the camera
+            if (_client?.Rpc != null)
+            {
+                try
+                {
+                    var audioConfig = await _client.Rpc.GetAudioEncodeConfigAsync();
+                    if (audioConfig != null)
+                    {
+                        Console.WriteLine($"[Audio] Camera audio enabled: {audioConfig.Enable}, Codec: {audioConfig.Compression}");
+                        if (!audioConfig.Enable)
+                        {
+                            var result = MessageBox.Show(
+                                "Audio is disabled on the camera's encoder settings.\n\n" +
+                                "Would you like to enable it? (This may require a stream restart)",
+                                "Audio Disabled", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                            if (result == MessageBoxResult.Yes)
+                            {
+                                var enabled = await _client.Rpc.SetAudioEnabledAsync(true);
+                                if (enabled)
+                                {
+                                    MessageBox.Show("Audio enabled. Please wait a moment for the stream to update.",
+                                        "Audio Enabled", MessageBoxButton.OK, MessageBoxImage.Information);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Audio] Config check error: {ex.Message}");
+                }
+            }
+
             if (_audioManager.Start())
             {
                 _isAudioEnabled = true;
@@ -2078,9 +2115,17 @@ public partial class MainWindow : System.Windows.Window
             }
             else
             {
-                MessageBox.Show("Failed to start audio stream. The camera may not have audio support.",
+                AudioStatusText.Text = "Audio: Failed";
+                MessageBox.Show(
+                    "Failed to start audio stream.\n\n" +
+                    "Possible causes:\n" +
+                    "• Audio may be disabled in camera settings\n" +
+                    "• The RTSP stream may not include audio\n" +
+                    "• Check the console for detailed error messages",
                     "Audio Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+
+            AudioButton.IsEnabled = true;
         }
         else
         {

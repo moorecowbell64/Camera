@@ -30,21 +30,27 @@ public class AudioManager : IDisposable
         // Initialize LibVLC
         Core.Initialize();
         _libVLC = new LibVLC(
-            "--no-video",           // Audio only
-            "--rtsp-tcp",           // Use TCP for RTSP (more reliable)
-            "--network-caching=300" // Low latency
+            "--no-video",              // Audio only - don't decode video
+            "--rtsp-tcp",              // Use TCP for RTSP (more reliable)
+            "--network-caching=500",   // Slightly higher cache for stability
+            "--live-caching=300",      // Live stream caching
+            "--sout-mux-caching=300",  // Mux caching
+            "--aout=directsound",      // Use DirectSound on Windows
+            "--verbose=2"              // Enable verbose logging for debugging
         );
     }
 
     public void SetRtspUrl(string url)
     {
         _rtspUrl = url;
+        Console.WriteLine($"[AudioManager] RTSP URL set to: {url}");
     }
 
     public void SetRtspUrl(string ip, string username, string password, int channel = 1)
     {
-        // Standard RTSP URL for audio (same stream as video typically contains audio)
+        // Standard RTSP URL for main stream (contains audio)
         _rtspUrl = $"rtsp://{username}:{password}@{ip}:554/stream1";
+        Console.WriteLine($"[AudioManager] RTSP URL configured for {ip}");
     }
 
     public bool Start()
@@ -62,7 +68,17 @@ public class AudioManager : IDisposable
 
         try
         {
+            Console.WriteLine($"[AudioManager] Starting audio playback...");
+            Console.WriteLine($"[AudioManager] URL: {_rtspUrl}");
+
+            // Create media with RTSP-specific options
             _media = new Media(_libVLC!, _rtspUrl, FromType.FromLocation);
+
+            // Add options for better audio handling
+            _media.AddOption(":rtsp-tcp");
+            _media.AddOption(":network-caching=500");
+            _media.AddOption(":no-video");  // Ensure no video processing
+
             _mediaPlayer = new MediaPlayer(_media);
             _mediaPlayer.Volume = _volume;
 
@@ -70,26 +86,58 @@ public class AudioManager : IDisposable
             _mediaPlayer.Playing += (s, e) =>
             {
                 _isPlaying = true;
-                StatusChanged?.Invoke(this, "Audio Playing");
+                Console.WriteLine("[AudioManager] Audio stream playing");
+                StatusChanged?.Invoke(this, "Audio: Playing");
             };
 
             _mediaPlayer.Stopped += (s, e) =>
             {
                 _isPlaying = false;
-                StatusChanged?.Invoke(this, "Audio Stopped");
+                Console.WriteLine("[AudioManager] Audio stream stopped");
+                StatusChanged?.Invoke(this, "Audio: Stopped");
             };
 
             _mediaPlayer.EncounteredError += (s, e) =>
             {
                 _isPlaying = false;
-                StatusChanged?.Invoke(this, "Audio Error");
+                Console.WriteLine("[AudioManager] Audio error encountered");
+                StatusChanged?.Invoke(this, "Audio: Error - check console");
             };
 
-            _mediaPlayer.Play();
+            _mediaPlayer.Buffering += (s, e) =>
+            {
+                Console.WriteLine($"[AudioManager] Buffering: {e.Cache}%");
+                if (e.Cache < 100)
+                    StatusChanged?.Invoke(this, $"Audio: Buffering {e.Cache:F0}%");
+            };
+
+            _mediaPlayer.Opening += (s, e) =>
+            {
+                Console.WriteLine("[AudioManager] Opening audio stream...");
+                StatusChanged?.Invoke(this, "Audio: Connecting...");
+            };
+
+            _mediaPlayer.EndReached += (s, e) =>
+            {
+                Console.WriteLine("[AudioManager] Stream ended");
+                _isPlaying = false;
+                StatusChanged?.Invoke(this, "Audio: Stream ended");
+            };
+
+            var result = _mediaPlayer.Play();
+            Console.WriteLine($"[AudioManager] Play() returned: {result}");
+
+            if (!result)
+            {
+                StatusChanged?.Invoke(this, "Audio: Failed to start");
+                return false;
+            }
+
             return true;
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[AudioManager] Exception: {ex.Message}");
             StatusChanged?.Invoke(this, $"Audio Error: {ex.Message}");
             return false;
         }
@@ -99,36 +147,46 @@ public class AudioManager : IDisposable
     {
         try
         {
+            Console.WriteLine("[AudioManager] Stopping audio...");
             _mediaPlayer?.Stop();
             _media?.Dispose();
             _media = null;
             _mediaPlayer?.Dispose();
             _mediaPlayer = null;
             _isPlaying = false;
-            StatusChanged?.Invoke(this, "Audio Stopped");
+            StatusChanged?.Invoke(this, "Audio: Disabled");
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore cleanup errors
+            Console.WriteLine($"[AudioManager] Stop error: {ex.Message}");
         }
     }
 
     public void Mute()
     {
         if (_mediaPlayer != null)
+        {
             _mediaPlayer.Mute = true;
+            StatusChanged?.Invoke(this, "Audio: Muted");
+        }
     }
 
     public void Unmute()
     {
         if (_mediaPlayer != null)
+        {
             _mediaPlayer.Mute = false;
+            StatusChanged?.Invoke(this, "Audio: Unmuted");
+        }
     }
 
     public void ToggleMute()
     {
         if (_mediaPlayer != null)
+        {
             _mediaPlayer.Mute = !_mediaPlayer.Mute;
+            StatusChanged?.Invoke(this, _mediaPlayer.Mute ? "Audio: Muted" : "Audio: Playing");
+        }
     }
 
     public bool IsMuted => _mediaPlayer?.Mute ?? false;
