@@ -1598,9 +1598,20 @@ public partial class MainWindow : System.Windows.Window
                 RecordButton.Content = "Stop Recording";
                 RecordButton.Background = (Brush)Application.Current.Resources["AccentRedBrush"];
                 UpdateRecordingStatus("Recording...", Brushes.Red);
-                // Dual-stream mode: sub-stream for preview, main stream for recording
-                // Preview continues during recording via sub-stream
-                NoVideoText.Visibility = Visibility.Collapsed;
+
+                // Check if sub-stream preview is available
+                if (_recording.IsUsingSubStream)
+                {
+                    // Dual-stream mode: sub-stream for preview, main stream for recording
+                    NoVideoText.Visibility = Visibility.Collapsed;
+                    StreamQualityStatus.Text = "Stream: SD (preview)";
+                }
+                else
+                {
+                    // Fallback: no preview during recording
+                    NoVideoText.Text = "Recording in progress...\n\nPreview paused.";
+                    NoVideoText.Visibility = Visibility.Visible;
+                }
                 StartRecordingTimer();
             }
             else

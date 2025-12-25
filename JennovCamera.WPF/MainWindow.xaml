@@ -118,7 +118,9 @@
                            Text="Not Recording"
                            Foreground="#888888"
                            FontSize="14"
-                           VerticalAlignment="Center"/>
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="200"/>
             </Grid>
         </Grid>
 
@@ -367,7 +369,8 @@
                                              IsReadOnly="True"
                                              Text="(Click Browse)"
                                              VerticalContentAlignment="Center"
-                                             Height="28"/>
+                                             Height="28"
+                                             ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                                     <Button Grid.Column="1" Content="Browse"
                                             Click="BrowseRecordingFolder_Click"
                                             Width="60" Margin="5,0,0,0"/>
@@ -386,10 +389,10 @@
                                     <Label Content="Quality:" VerticalAlignment="Center"/>
                                     <ComboBox x:Name="RecordingQualityCombo" Grid.Column="1"
                                               SelectionChanged="RecordingQualityCombo_SelectionChanged"
-                                              SelectedIndex="2">
-                                        <ComboBoxItem Content="Standard (192kbps)" Tag="Standard"/>
-                                        <ComboBoxItem Content="High (320kbps)" Tag="High"/>
-                                        <ComboBoxItem Content="Maximum (320kbps HQ)" Tag="Maximum"/>
+                                              SelectedIndex="2" MinWidth="120">
+                                        <ComboBoxItem Content="Standard" Tag="Standard" ToolTip="192kbps AAC audio"/>
+                                        <ComboBoxItem Content="High" Tag="High" ToolTip="256kbps AAC audio"/>
+                                        <ComboBoxItem Content="Maximum" Tag="Maximum" ToolTip="320kbps HQ AAC audio"/>
                                     </ComboBox>
                                 </Grid>
 
@@ -509,9 +512,9 @@
                                     </Grid.ColumnDefinitions>
                                     <Label Content="Quality:" VerticalAlignment="Center"/>
                                     <ComboBox x:Name="StreamQualityCombo" Grid.Column="1" Margin="5"
-                                              SelectionChanged="StreamQualityCombo_SelectionChanged">
-                                        <ComboBoxItem Content="Main - 4K (3840x2160)" Tag="Main"/>
-                                        <ComboBoxItem Content="Sub - SD (720x480)" Tag="Sub"/>
+                                              SelectionChanged="StreamQualityCombo_SelectionChanged" MinWidth="140">
+                                        <ComboBoxItem Content="Main (4K)" Tag="Main" ToolTip="3840x2160 - High quality"/>
+                                        <ComboBoxItem Content="Sub (SD)" Tag="Sub" ToolTip="720x480 - Lower bandwidth"/>
                                     </ComboBox>
                                 </Grid>
                                 <TextBlock x:Name="StreamUrlText"
@@ -541,30 +544,30 @@
                                         <RowDefinition/>
                                     </Grid.RowDefinitions>
 
-                                    <Label Grid.Row="0" Grid.Column="0" Content="Resolution:" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="ResolutionCombo" Grid.Row="0" Grid.Column="1" Margin="5">
-                                        <ComboBoxItem Content="3840x2160 (4K)" Tag="3840x2160"/>
-                                        <ComboBoxItem Content="2560x1440 (QHD)" Tag="2560x1440"/>
-                                        <ComboBoxItem Content="1920x1080 (1080p)" Tag="1920x1080"/>
-                                        <ComboBoxItem Content="1280x720 (720p)" Tag="1280x720"/>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="Res:" VerticalAlignment="Center" ToolTip="Resolution"/>
+                                    <ComboBox x:Name="ResolutionCombo" Grid.Row="0" Grid.Column="1" Margin="5" MinWidth="110">
+                                        <ComboBoxItem Content="4K" Tag="3840x2160" ToolTip="3840x2160"/>
+                                        <ComboBoxItem Content="QHD" Tag="2560x1440" ToolTip="2560x1440"/>
+                                        <ComboBoxItem Content="1080p" Tag="1920x1080" ToolTip="1920x1080"/>
+                                        <ComboBoxItem Content="720p" Tag="1280x720" ToolTip="1280x720"/>
                                     </ComboBox>
 
-                                    <Label Grid.Row="1" Grid.Column="0" Content="Frame Rate:" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="FrameRateCombo" Grid.Row="1" Grid.Column="1" Margin="5">
-                                        <ComboBoxItem Content="60 fps" Tag="60"/>
-                                        <ComboBoxItem Content="30 fps" Tag="30"/>
-                                        <ComboBoxItem Content="20 fps" Tag="20"/>
-                                        <ComboBoxItem Content="15 fps" Tag="15"/>
-                                        <ComboBoxItem Content="10 fps" Tag="10"/>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="FPS:" VerticalAlignment="Center" ToolTip="Frames per second"/>
+                                    <ComboBox x:Name="FrameRateCombo" Grid.Row="1" Grid.Column="1" Margin="5" MinWidth="110">
+                                        <ComboBoxItem Content="60" Tag="60"/>
+                                        <ComboBoxItem Content="30" Tag="30"/>
+                                        <ComboBoxItem Content="25" Tag="25"/>
+                                        <ComboBoxItem Content="20" Tag="20"/>
+                                        <ComboBoxItem Content="15" Tag="15"/>
                                     </ComboBox>
 
-                                    <Label Grid.Row="2" Grid.Column="0" Content="Bitrate:" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="BitrateCombo" Grid.Row="2" Grid.Column="1" Margin="5">
-                                        <ComboBoxItem Content="Auto (0)" Tag="0"/>
-                                        <ComboBoxItem Content="8000 kbps" Tag="8000"/>
-                                        <ComboBoxItem Content="6000 kbps" Tag="6000"/>
-                                        <ComboBoxItem Content="4000 kbps" Tag="4000"/>
-                                        <ComboBoxItem Content="2000 kbps" Tag="2000"/>
+                                    <Label Grid.Row="2" Grid.Column="0" Content="Bitrate:" VerticalAlignment="Center" ToolTip="Video bitrate (kbps)"/>
+                                    <ComboBox x:Name="BitrateCombo" Grid.Row="2" Grid.Column="1" Margin="5" MinWidth="110">
+                                        <ComboBoxItem Content="Auto" Tag="0" ToolTip="Let camera decide"/>
+                                        <ComboBoxItem Content="8 Mbps" Tag="8000"/>
+                                        <ComboBoxItem Content="6 Mbps" Tag="6000"/>
+                                        <ComboBoxItem Content="4 Mbps" Tag="4000"/>
+                                        <ComboBoxItem Content="2 Mbps" Tag="2000"/>
                                     </ComboBox>
 
                                     <Label Grid.Row="3" Grid.Column="0" Content="Profile:" VerticalAlignment="Center"/>
@@ -646,7 +649,8 @@
                                 <TextBlock x:Name="FFmpegStatusText"
                                            Text="FFmpeg: Checking..."
                                            Foreground="#AAAAAA"
-                                           FontSize="12"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
                                            Margin="0,0,0,10"/>
                                 <Label Content="Custom Path (optional):" Margin="0,0,0,2"/>
                                 <Grid>
@@ -657,7 +661,8 @@
                                     <TextBox x:Name="FFmpegPathText"
                                              Text=""
                                              VerticalContentAlignment="Center"
-                                             Height="28"/>
+                                             Height="28"
+                                             ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                                     <Button Grid.Column="1" Content="Browse"
                                             Click="BrowseFFmpegPath_Click"
                                             Width="60" Margin="5,0,0,0"/>

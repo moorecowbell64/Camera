@@ -55,6 +55,7 @@ public class RecordingManager : IDisposable
 
     public bool IsRecording => _isRecording;
     public bool IsStreaming => _isStreaming;
+    public bool IsUsingSubStream => _isUsingSubStream;
     public StreamQuality CurrentQuality => _currentQuality;
     public string CurrentRtspUrl => _rtspUrl;
     public string RecordingFolder
@@ -651,6 +652,7 @@ public class RecordingManager : IDisposable
 
         // Dual-stream mode: Switch preview to sub-stream, record from main stream
         // This uses 2 connections (sub-stream + main stream) which most cameras support
+        bool previewAvailable = false;
         if (_useDualStreamMode && !string.IsNullOrEmpty(_subStreamUrl))
         {
             if (_isStreaming)
@@ -660,7 +662,11 @@ public class RecordingManager : IDisposable
                 Thread.Sleep(500); // Brief pause for connection cleanup
 
                 // Start preview from sub-stream
-                StartSubStreamPreview();
+                previewAvailable = StartSubStreamPreview();
+                if (!previewAvailable)
+                {
+                    Console.WriteLine("Sub-stream preview failed, recording will proceed without preview");
+                }
             }
         }
         else
