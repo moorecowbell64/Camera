@@ -764,6 +764,111 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- Camera Info Tab -->
+            <TabItem Header="Info">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
+
+                        <!-- Camera Time -->
+                        <GroupBox Header="Camera Time" x:Name="CameraTimeGroup" IsEnabled="False">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label Content="Camera:" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="CameraTimeText" Grid.Column="1"
+                                               Text="--"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"
+                                               FontWeight="Bold"/>
+                                </Grid>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Refresh" Click="RefreshCameraTime_Click" Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Content="Sync to PC"
+                                            Click="SyncCameraTime_Click"
+                                            Background="{StaticResource AccentOrangeBrush}"
+                                            Margin="2,0,0,0"
+                                            ToolTip="Set camera time to current PC time"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Storage Info -->
+                        <GroupBox Header="Storage" x:Name="StorageInfoGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock x:Name="StorageInfoText"
+                                           Text="Connect to view storage info..."
+                                           Foreground="#AAAAAA"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                <ProgressBar x:Name="StorageProgress"
+                                             Height="20"
+                                             Margin="0,10,0,5"
+                                             Foreground="{StaticResource PrimaryBrush}"
+                                             Background="#333333"/>
+                                <TextBlock x:Name="StorageUsageText"
+                                           Text="0% used"
+                                           Foreground="#888888"
+                                           FontSize="11"
+                                           HorizontalAlignment="Center"/>
+                                <Button Content="Refresh Storage Info"
+                                        Click="RefreshStorageInfo_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Users -->
+                        <GroupBox Header="Users" x:Name="UsersGroup" IsEnabled="False">
+                            <StackPanel>
+                                <ListBox x:Name="UsersListBox"
+                                         Height="100"
+                                         Background="#252525"
+                                         Foreground="White"
+                                         BorderBrush="{StaticResource PrimaryBrush}"/>
+                                <Button Content="Refresh Users"
+                                        Click="RefreshUsers_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Event Capabilities -->
+                        <GroupBox Header="Event Capabilities" x:Name="EventsGroup" IsEnabled="False">
+                            <StackPanel>
+                                <TextBlock x:Name="EventCapsText"
+                                           Text="Connect to view event capabilities..."
+                                           Foreground="#AAAAAA"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+                                <Button Content="Refresh Events"
+                                        Click="RefreshEventCaps_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Services -->
+                        <GroupBox Header="RPC Services" x:Name="ServicesGroup" IsEnabled="False">
+                            <StackPanel>
+                                <ListBox x:Name="ServicesListBox"
+                                         Height="120"
+                                         Background="#252525"
+                                         Foreground="White"
+                                         BorderBrush="{StaticResource PrimaryBrush}"/>
+                                <Button Content="Refresh Services"
+                                        Click="RefreshServices_Click"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
         </TabControl>
     </Grid>
 </Window>

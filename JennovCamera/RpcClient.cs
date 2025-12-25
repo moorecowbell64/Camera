@@ -299,6 +299,333 @@ public class RpcClient : IDisposable
         return response.Result == true;
     }
 
+    #region Event Management
+
+    /// <summary>
+    /// Subscribe to camera events (motion, video loss, etc.)
+    /// Event codes: VideoMotion, VideoLoss, VideoBlind, AlarmLocal, StorageNotExist, StorageLowSpace, StorageFailure
+    /// </summary>
+    public async Task<bool> SubscribeEventsAsync(string[] eventCodes)
+    {
+        var response = await SendAsync("eventManager.attach", new { codes = eventCodes });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Unsubscribe from events
+    /// </summary>
+    public async Task<bool> UnsubscribeEventsAsync()
+    {
+        var response = await SendAsync("eventManager.detach");
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get event capabilities
+    /// </summary>
+    public async Task<string[]?> GetEventCapsAsync()
+    {
+        var response = await SendAsync("eventManager.getCaps");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var caps = JsonSerializer.Deserialize<EventCaps>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return caps?.Codes;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    #endregion
+
+    #region Storage & Recording
+
+    /// <summary>
+    /// Get all storage device names
+    /// </summary>
+    public async Task<string[]?> GetStorageNamesAsync()
+    {
+        var response = await SendAsync("devStorage.getAllNames");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<StorageNamesResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Names;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get storage device information
+    /// </summary>
+    public async Task<StorageDeviceInfo?> GetStorageInfoAsync(string deviceName = "/dev/sda")
+    {
+        var response = await SendAsync("devStorage.getDeviceInfo", new { name = deviceName });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            return JsonSerializer.Deserialize<StorageDeviceInfo>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Search for recordings
+    /// </summary>
+    public async Task<RecordingSearchResult?> SearchRecordingsAsync(DateTime startTime, DateTime endTime, int channel = 1)
+    {
+        // Create finder
+        var createResponse = await SendAsync("RecordFinder.factory.create");
+        if (createResponse.Params == null) return null;
+
+        try
+        {
+            var finderJson = JsonSerializer.Serialize(createResponse.Params);
+            var finder = JsonSerializer.Deserialize<RecordFinderCreate>(finderJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (finder?.Object == null) return null;
+
+            // Start search
+            var startResponse = await SendAsync("RecordFinder.startFind", new
+            {
+                @object = finder.Object,
+                condition = new
+                {
+                    Channel = channel,
+                    StartTime = startTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                    EndTime = endTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Types = new[] { "dav", "mp4" }
+                }
+            });
+
+            if (startResponse.Result != true) return null;
+
+            // Get results
+            var doFindResponse = await SendAsync("RecordFinder.doFind", new
+            {
+                @object = finder.Object,
+                count = 100
+            });
+
+            if (doFindResponse.Params == null) return null;
+
+            var resultJson = JsonSerializer.Serialize(doFindResponse.Params);
+            return JsonSerializer.Deserialize<RecordingSearchResult>(resultJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Recording search error: {ex.Message}");
+            return null;
+        }
+    }
+
+    #endregion
+
+    #region User Management
+
+    /// <summary>
+    /// Get all users
+    /// </summary>
+    public async Task<UserInfo[]?> GetUsersAsync()
+    {
+        var response = await SendAsync("userManager.getUserInfoAll");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<UserListResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Users;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get all groups
+    /// </summary>
+    public async Task<GroupInfo[]?> GetGroupsAsync()
+    {
+        var response = await SendAsync("userManager.getGroupInfoAll");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<GroupListResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Groups;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Change user password
+    /// </summary>
+    public async Task<bool> ChangePasswordAsync(string username, string oldPassword, string newPassword)
+    {
+        var response = await SendAsync("userManager.modifyPassword", new
+        {
+            name = username,
+            pwd = oldPassword,
+            pwdNew = newPassword
+        });
+        return response.Result == true;
+    }
+
+    #endregion
+
+    #region Additional Configuration
+
+    /// <summary>
+    /// Get any configuration by name
+    /// Common names: Network, NTP, Email, Encode, VideoColor, MotionDetect,
+    /// VideoInOptions, Record, Snap, Alarm, Storage, VideoWidget, Audio
+    /// </summary>
+    public async Task<JsonElement?> GetConfigRawAsync(string configName)
+    {
+        var response = await SendAsync("configManager.getConfig", new { name = configName });
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            return JsonSerializer.Deserialize<JsonElement>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Restore configuration to factory default
+    /// </summary>
+    public async Task<bool> RestoreConfigAsync(string[] configNames)
+    {
+        var response = await SendAsync("configManager.restore", configNames);
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Restore all configurations except specified ones
+    /// </summary>
+    public async Task<bool> RestoreAllExceptAsync(string[] exceptNames)
+    {
+        var response = await SendAsync("configManager.restoreExcept", exceptNames);
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Get current camera time
+    /// </summary>
+    public async Task<DateTime?> GetCurrentTimeAsync()
+    {
+        var response = await SendAsync("global.getCurrentTime");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var timeResult = JsonSerializer.Deserialize<TimeResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return timeResult?.Time;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Set camera time
+    /// </summary>
+    public async Task<bool> SetCurrentTimeAsync(DateTime time)
+    {
+        var response = await SendAsync("global.setCurrentTime", new
+        {
+            time = time.ToString("yyyy-MM-dd HH:mm:ss")
+        });
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// Logout from RPC session
+    /// </summary>
+    public async Task<bool> LogoutAsync()
+    {
+        var response = await SendAsync("global.logout");
+        _isAuthenticated = false;
+        _sessionId = null;
+        return response.Result == true;
+    }
+
+    /// <summary>
+    /// List available RPC services
+    /// </summary>
+    public async Task<string[]?> ListServicesAsync()
+    {
+        var response = await SendAsync("system.listService");
+        if (response.Params == null) return null;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(response.Params);
+            var result = JsonSerializer.Deserialize<ServiceListResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return result?.Services;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    #endregion
+
     public void Dispose()
     {
         _httpClient.Dispose();
@@ -448,6 +775,184 @@ public class SystemInfo
 
     [JsonPropertyName("hardwareVersion")]
     public string? HardwareVersion { get; set; }
+}
+
+#endregion
+
+#region Event Classes
+
+public class EventCaps
+{
+    [JsonPropertyName("codes")]
+    public string[]? Codes { get; set; }
+}
+
+#endregion
+
+#region Storage Classes
+
+public class StorageNamesResult
+{
+    [JsonPropertyName("names")]
+    public string[]? Names { get; set; }
+}
+
+public class StorageDeviceInfo
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("State")]
+    public string? State { get; set; }
+
+    [JsonPropertyName("TotalBytes")]
+    public long TotalBytes { get; set; }
+
+    [JsonPropertyName("UsedBytes")]
+    public long UsedBytes { get; set; }
+
+    [JsonPropertyName("FreeBytes")]
+    public long FreeBytes { get; set; }
+
+    [JsonPropertyName("IsError")]
+    public bool IsError { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Partition")]
+    public StoragePartition[]? Partitions { get; set; }
+}
+
+public class StoragePartition
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("TotalBytes")]
+    public long TotalBytes { get; set; }
+
+    [JsonPropertyName("UsedBytes")]
+    public long UsedBytes { get; set; }
+
+    [JsonPropertyName("FreeBytes")]
+    public long FreeBytes { get; set; }
+
+    [JsonPropertyName("IsCurrent")]
+    public bool IsCurrent { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+}
+
+public class RecordFinderCreate
+{
+    [JsonPropertyName("object")]
+    public int Object { get; set; }
+}
+
+public class RecordingSearchResult
+{
+    [JsonPropertyName("found")]
+    public int Found { get; set; }
+
+    [JsonPropertyName("infos")]
+    public RecordingInfo[]? Infos { get; set; }
+}
+
+public class RecordingInfo
+{
+    [JsonPropertyName("Channel")]
+    public int Channel { get; set; }
+
+    [JsonPropertyName("StartTime")]
+    public string? StartTime { get; set; }
+
+    [JsonPropertyName("EndTime")]
+    public string? EndTime { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("FilePath")]
+    public string? FilePath { get; set; }
+
+    [JsonPropertyName("Length")]
+    public long Length { get; set; }
+
+    [JsonPropertyName("Flags")]
+    public string[]? Flags { get; set; }
+
+    [JsonPropertyName("Events")]
+    public string[]? Events { get; set; }
+}
+
+#endregion
+
+#region User Management Classes
+
+public class UserListResult
+{
+    [JsonPropertyName("users")]
+    public UserInfo[]? Users { get; set; }
+}
+
+public class GroupListResult
+{
+    [JsonPropertyName("groups")]
+    public GroupInfo[]? Groups { get; set; }
+}
+
+public class UserInfo
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("Group")]
+    public string? Group { get; set; }
+
+    [JsonPropertyName("Memo")]
+    public string? Memo { get; set; }
+
+    [JsonPropertyName("Reserved")]
+    public bool Reserved { get; set; }
+
+    [JsonPropertyName("Sharable")]
+    public bool Sharable { get; set; }
+}
+
+public class GroupInfo
+{
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("Memo")]
+    public string? Memo { get; set; }
+
+    [JsonPropertyName("Authorities")]
+    public string[]? Authorities { get; set; }
+}
+
+#endregion
+
+#region Time & Service Classes
+
+public class TimeResult
+{
+    [JsonPropertyName("time")]
+    public DateTime Time { get; set; }
+}
+
+public class ServiceListResult
+{
+    [JsonPropertyName("services")]
+    public string[]? Services { get; set; }
 }
 
 #endregion

@@ -473,6 +473,13 @@ public partial class MainWindow : System.Windows.Window
             OSDSettingsGroup.IsEnabled = true;
             DeviceInfoGroup.IsEnabled = true;
 
+            // Enable Camera Info tab controls
+            CameraTimeGroup.IsEnabled = true;
+            StorageInfoGroup.IsEnabled = true;
+            UsersGroup.IsEnabled = true;
+            EventsGroup.IsEnabled = true;
+            ServicesGroup.IsEnabled = true;
+
             // Initialize audio manager
             _audioManager = new AudioManager();
             _audioManager.SetRtspUrl(ip, username, password);
@@ -555,6 +562,13 @@ public partial class MainWindow : System.Windows.Window
             EncoderSettingsGroup.IsEnabled = false;
             OSDSettingsGroup.IsEnabled = false;
             DeviceInfoGroup.IsEnabled = false;
+
+            // Disable Camera Info tab controls
+            CameraTimeGroup.IsEnabled = false;
+            StorageInfoGroup.IsEnabled = false;
+            UsersGroup.IsEnabled = false;
+            EventsGroup.IsEnabled = false;
+            ServicesGroup.IsEnabled = false;
         }
         catch (Exception ex)
         {
@@ -2430,6 +2444,224 @@ public partial class MainWindow : System.Windows.Window
             MessageBox.Show($"Failed to reset image settings: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    #endregion
+
+    #region Camera Info Tab Handlers
+
+    private async void RefreshCameraTime_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadCameraTimeAsync();
+    }
+
+    private async void SyncCameraTime_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client?.Rpc == null) return;
+
+        var result = MessageBox.Show(
+            $"Set camera time to current PC time?\n\n{DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+            "Sync Time", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var success = await _client.Rpc.SetCurrentTimeAsync(DateTime.Now);
+            if (success)
+            {
+                MessageBox.Show("Camera time synchronized!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                await LoadCameraTimeAsync();
+            }
+            else
+            {
+                MessageBox.Show("Failed to sync camera time.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to sync time: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task LoadCameraTimeAsync()
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var time = await _client.Rpc.GetCurrentTimeAsync();
+            if (time.HasValue)
+            {
+                CameraTimeText.Text = time.Value.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            else
+            {
+                CameraTimeText.Text = "Failed to load";
+            }
+        }
+        catch (Exception ex)
+        {
+            CameraTimeText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void RefreshStorageInfo_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadStorageInfoAsync();
+    }
+
+    private async Task LoadStorageInfoAsync()
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var names = await _client.Rpc.GetStorageNamesAsync();
+            if (names != null && names.Length > 0)
+            {
+                var info = await _client.Rpc.GetStorageInfoAsync(names[0]);
+                if (info != null)
+                {
+                    var totalGB = info.TotalBytes / 1024.0 / 1024.0 / 1024.0;
+                    var usedGB = info.UsedBytes / 1024.0 / 1024.0 / 1024.0;
+                    var freeGB = info.FreeBytes / 1024.0 / 1024.0 / 1024.0;
+                    var usedPercent = info.TotalBytes > 0 ? (double)info.UsedBytes / info.TotalBytes * 100 : 0;
+
+                    StorageInfoText.Text = $"Device: {info.Name}\n" +
+                        $"Type: {info.Type}\n" +
+                        $"State: {info.State}\n" +
+                        $"Total: {totalGB:F1} GB\n" +
+                        $"Used: {usedGB:F1} GB\n" +
+                        $"Free: {freeGB:F1} GB";
+
+                    StorageProgress.Value = usedPercent;
+                    StorageUsageText.Text = $"{usedPercent:F1}% used";
+
+                    if (usedPercent > 90)
+                        StorageProgress.Foreground = Brushes.Red;
+                    else if (usedPercent > 70)
+                        StorageProgress.Foreground = Brushes.Orange;
+                    else
+                        StorageProgress.Foreground = (Brush)Application.Current.Resources["PrimaryBrush"];
+                }
+                else
+                {
+                    StorageInfoText.Text = "No storage info available";
+                }
+            }
+            else
+            {
+                StorageInfoText.Text = "No storage devices found";
+            }
+        }
+        catch (Exception ex)
+        {
+            StorageInfoText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void RefreshUsers_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            UsersListBox.Items.Clear();
+            var users = await _client.Rpc.GetUsersAsync();
+            if (users != null)
+            {
+                foreach (var user in users)
+                {
+                    var displayText = $"{user.Name} ({user.Group})";
+                    if (user.Reserved) displayText += " [Reserved]";
+                    UsersListBox.Items.Add(displayText);
+                }
+            }
+            else
+            {
+                UsersListBox.Items.Add("No users found or API not available");
+            }
+        }
+        catch (Exception ex)
+        {
+            UsersListBox.Items.Add($"Error: {ex.Message}");
+        }
+    }
+
+    private async void RefreshEventCaps_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadEventCapsAsync();
+    }
+
+    private async Task LoadEventCapsAsync()
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            var caps = await _client.Rpc.GetEventCapsAsync();
+            if (caps != null && caps.Length > 0)
+            {
+                EventCapsText.Text = "Supported events:\n" + string.Join("\n", caps.Select(c => $"• {c}"));
+            }
+            else
+            {
+                EventCapsText.Text = "No event capabilities found or API not available";
+            }
+        }
+        catch (Exception ex)
+        {
+            EventCapsText.Text = $"Error: {ex.Message}";
+        }
+    }
+
+    private async void RefreshServices_Click(object sender, RoutedEventArgs e)
+    {
+        await LoadServicesAsync();
+    }
+
+    private async Task LoadServicesAsync()
+    {
+        if (_client?.Rpc == null) return;
+
+        try
+        {
+            ServicesListBox.Items.Clear();
+            var services = await _client.Rpc.ListServicesAsync();
+            if (services != null)
+            {
+                foreach (var service in services.OrderBy(s => s))
+                {
+                    ServicesListBox.Items.Add(service);
+                }
+            }
+            else
+            {
+                ServicesListBox.Items.Add("No services found or API not available");
+            }
+        }
+        catch (Exception ex)
+        {
+            ServicesListBox.Items.Add($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAllCameraInfoAsync()
+    {
+        // Load all camera info in parallel
+        await Task.WhenAll(
+            LoadCameraTimeAsync(),
+            LoadStorageInfoAsync(),
+            LoadUsersAsync(),
+            LoadEventCapsAsync(),
+            LoadServicesAsync()
+        );
     }
 
     #endregion
