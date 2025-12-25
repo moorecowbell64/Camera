@@ -3150,8 +3150,6 @@ public partial class MainWindow : System.Windows.Window
 
     #region Advanced Tab - Two-Way Audio
 
-    private bool _isTalking;
-
     private async void StartTalk_Click(object sender, RoutedEventArgs e)
     {
         if (_client?.Rpc == null) return;
@@ -3161,7 +3159,6 @@ public partial class MainWindow : System.Windows.Window
             var success = await _client.Rpc.StartSpeakerAsync();
             if (success)
             {
-                _isTalking = true;
                 TalkButton.Content = "Talking...";
                 TalkStatusText.Text = "Two-way audio active";
                 TalkStatusText.Foreground = Brushes.LimeGreen;
@@ -3186,7 +3183,6 @@ public partial class MainWindow : System.Windows.Window
         try
         {
             await _client.Rpc.StopSpeakerAsync();
-            _isTalking = false;
             TalkButton.Content = "Start Talk";
             TalkStatusText.Text = "Two-way audio inactive";
             TalkStatusText.Foreground = Brushes.Gray;
